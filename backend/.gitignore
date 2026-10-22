@@ -1,0 +1,70 @@
+# ==========================================
+# RentalHub Backend — Django / Python
+# ==========================================
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Django logs and local settings
+*.log
+local_settings.py
+
+# Local development databases
+db.sqlite3
+db.sqlite3-journal
+*.sqlite3
+
+# Uploaded files and generated static files
+media/
+staticfiles/
+
+# Python packaging
+build/
+dist/
+downloads/
+.eggs/
+*.egg-info/
+wheels/
+pip-wheel-metadata/
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+
+# IDEs and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*.orig
+
+# Environment-specific secrets / service credentials
+service-account*.json
+credentials*.json
