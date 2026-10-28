@@ -1,11 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import type { Room, Tenant, Tenancy, RentCharge, Payment, Expense, PropertySettings } from '../types';
+import type { Room, Tenant, Tenancy, RentCharge, Payment, Expense, PropertySettings, Deposit, SettleDepositPayload } from '../types';
 import {
   roomsApi,
   tenantsApi,
   tenanciesApi,
   rentChargesApi,
   paymentsApi,
+  depositsApi,
   expensesApi,
   settingsApi,
 } from '../services/api';
@@ -55,6 +56,7 @@ interface RentalContextType {
   rentCharges: RentCharge[];
   payments: Payment[];
   expenses: Expense[];
+  deposits: Deposit[];
   selectedMonth: string; // "2026-10"
   setSelectedMonth: (month: string) => void;
   isLoading: boolean;
@@ -70,11 +72,14 @@ interface RentalContextType {
   occupancyCount: number;
   occupancyPercentage: number;
   overdueCount: number;
+  totalDepositsHeld: number;
+  totalDepositsRefunded: number;
 
   // Actions
   recordPayment: (payment: RecordPaymentInput) => Promise<Payment>;
   registerTenant: (tenantData: RegisterTenantInput, tenancyData: RegisterTenancyInput) => Promise<void>;
   moveOutTenant: (tenancyId: string | number, payload: { endDate: string; notes?: string }) => Promise<void>;
+  settleDeposit: (tenancyId: string | number, payload: SettleDepositPayload) => Promise<Deposit>;
   addExpense: (expense: AddExpenseInput) => Promise<void>;
   generateMonthlyCharges: (month: string) => Promise<number>;
   updateSettings: (settings: Partial<PropertySettings>) => Promise<void>;
@@ -116,6 +121,7 @@ export const RentalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [rentCharges, setRentCharges] = useState<RentCharge[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [deposits, setDeposits] = useState<Deposit[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -131,6 +137,7 @@ export const RentalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         fetchedCharges,
         fetchedPayments,
         fetchedExpenses,
+        fetchedDeposits,
       ] = await Promise.all([
         settingsApi.get().catch(() => DEFAULT_SETTINGS),
         roomsApi.list().catch(() => []),
@@ -139,6 +146,7 @@ export const RentalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         rentChargesApi.list({ month: selectedMonth }).catch(() => []),
         paymentsApi.list().catch(() => []),
         expensesApi.list({ month: selectedMonth }).catch(() => []),
+        depositsApi.list().catch(() => []),
       ]);
 
       setSettings(fetchedSettings);
@@ -148,6 +156,7 @@ export const RentalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setRentCharges(fetchedCharges);
       setPayments(fetchedPayments);
       setExpenses(fetchedExpenses);
+      setDeposits(fetchedDeposits);
       setError(null);
     } catch (err: any) {
       console.error('Failed to load data from Django backend:', err);
@@ -173,6 +182,8 @@ export const RentalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const occupancyCount = rooms.filter((r) => r.status === 'occupied').length;
   const occupancyPercentage = rooms.length > 0 ? Math.round((occupancyCount / rooms.length) * 100) : 0;
   const overdueCount = currentMonthCharges.filter((c) => c.status === 'overdue' || (c.amount - c.paidAmount > 0)).length;
+  const totalDepositsHeld = deposits.filter((d) => d.status === 'held').reduce((acc, d) => acc + d.amount, 0);
+  const totalDepositsRefunded = deposits.reduce((acc, d) => acc + (d.refundAmount || 0), 0);
 
   // Actions connecting to real backend API
   const recordPayment = async (paymentData: RecordPaymentInput): Promise<Payment> => {
@@ -228,6 +239,20 @@ export const RentalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       await refreshData();
     } catch (err: any) {
       console.error('Move out tenant error:', err);
+      throw err;
+    }
+  };
+
+  const settleDeposit = async (
+    tenancyId: string | number,
+    payload: SettleDepositPayload
+  ): Promise<Deposit> => {
+    try {
+      const settled = await tenanciesApi.settleDeposit(tenancyId, payload);
+      await refreshData();
+      return settled;
+    } catch (err: any) {
+      console.error('Settle deposit error:', err);
       throw err;
     }
   };
@@ -327,6 +352,7 @@ export const RentalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         rentCharges,
         payments,
         expenses,
+        deposits,
         selectedMonth,
         setSelectedMonth,
         isLoading,
@@ -340,9 +366,12 @@ export const RentalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         occupancyCount,
         occupancyPercentage,
         overdueCount,
+        totalDepositsHeld,
+        totalDepositsRefunded,
         recordPayment,
         registerTenant,
         moveOutTenant,
+        settleDeposit,
         addExpense,
         generateMonthlyCharges,
         updateSettings,

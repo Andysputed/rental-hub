@@ -9,6 +9,9 @@ import type {
   ReceiptData,
   DashboardMetrics,
   MonthlyFinancialReport,
+  Deposit,
+  SettlementSummary,
+  SettleDepositPayload,
 } from '../types';
 
 export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace(/\/$/, '');
@@ -221,6 +224,16 @@ export const tenanciesApi = {
       status: raw.status,
     };
   },
+  getSettlementSummary: async (tenancyId: string | number): Promise<SettlementSummary> => {
+    return await request<SettlementSummary>(`/tenancies/${tenancyId}/settlement-summary/`);
+  },
+  settleDeposit: async (tenancyId: string | number, payload: SettleDepositPayload): Promise<Deposit> => {
+    const raw = await request<any>(`/tenancies/${tenancyId}/settle-deposit/`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return formatDeposit(raw);
+  },
 };
 
 // 4. Rent Charges API
@@ -323,6 +336,71 @@ export const paymentsApi = {
   },
   getReceipt: async (paymentId: string | number): Promise<ReceiptData> => {
     return await request<ReceiptData>(`/payments/${paymentId}/receipt/`);
+  },
+};
+
+function formatDeposit(raw: any): Deposit {
+  return {
+    id: String(raw.id),
+    tenancyId: String(raw.tenancyId),
+    tenantId: raw.tenantId ? String(raw.tenantId) : undefined,
+    tenantName: raw.tenantName || 'Tenant',
+    tenantPhone: raw.tenantPhone,
+    roomId: raw.roomId ? String(raw.roomId) : undefined,
+    roomName: raw.roomName || 'Room',
+    roomNumber: raw.roomNumber,
+    amount: Number(raw.amount),
+    receivedDate: raw.receivedDate || raw.received_date,
+    status: raw.status,
+    reference: raw.reference || '',
+    notes: raw.notes || '',
+    rentDeducted: Number(raw.rentDeducted || 0),
+    repairsDeducted: Number(raw.repairsDeducted || 0),
+    totalDeductions: Number(raw.totalDeductions || (Number(raw.rentDeducted || 0) + Number(raw.repairsDeducted || 0))),
+    refundableBalance: Number(raw.refundableBalance ?? Math.max(0, Number(raw.amount) - (Number(raw.rentDeducted || 0) + Number(raw.repairsDeducted || 0)))),
+    refundAmount: Number(raw.refundAmount || 0),
+    refundMethod: raw.refundMethod,
+    refundReference: raw.refundReference,
+    refundDate: raw.refundDate,
+    settledAt: raw.settledAt,
+    settlementNotes: raw.settlementNotes,
+    deductions: (raw.deductions || []).map((d: any) => ({
+      id: d.id,
+      deductionType: d.deductionType || d.deduction_type,
+      description: d.description,
+      amount: Number(d.amount),
+      chargeId: d.chargeId,
+      chargeMonth: d.chargeMonth,
+      createdAt: d.created_at || d.createdAt,
+    })),
+    createdAt: raw.created_at,
+    updatedAt: raw.updated_at,
+  };
+}
+
+// 5b. Deposits API
+export const depositsApi = {
+  list: async (params?: { status?: string; tenancyId?: string | number; tenantId?: string | number; roomId?: string | number; search?: string }): Promise<Deposit[]> => {
+    const sp = new URLSearchParams();
+    if (params?.status) sp.append('status', params.status);
+    if (params?.tenancyId) sp.append('tenancyId', String(params.tenancyId));
+    if (params?.tenantId) sp.append('tenantId', String(params.tenantId));
+    if (params?.roomId) sp.append('roomId', String(params.roomId));
+    if (params?.search) sp.append('search', params.search);
+    const qs = sp.toString() ? `?${sp.toString()}` : '';
+    const raw = await request<any[]>(`/deposits/${qs}`);
+    return raw.map(formatDeposit);
+  },
+  get: async (depositId: string | number): Promise<Deposit> => {
+    const raw = await request<any>(`/deposits/${depositId}/`);
+    return formatDeposit(raw);
+  },
+  settle: async (depositId: string | number, payload: SettleDepositPayload): Promise<Deposit> => {
+    const raw = await request<any>(`/deposits/${depositId}/settle/`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return formatDeposit(raw);
   },
 };
 

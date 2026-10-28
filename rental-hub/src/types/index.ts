@@ -244,3 +244,97 @@ export interface MonthlyFinancialReport {
   };
   reconciliationNotes: string;
 }
+
+export type DepositStatus = 'held' | 'settled' | 'refunded' | 'applied';
+
+export interface DepositDeduction {
+  id: string | number;
+  deductionType: 'rent' | 'repair' | 'cleaning' | 'other';
+  description: string;
+  amount: number;
+  chargeId?: string | number | null;
+  chargeMonth?: string | null;
+  createdAt?: string;
+}
+
+export interface Deposit {
+  id: string;
+  tenancyId: string;
+  tenantId?: string;
+  tenantName: string;
+  tenantPhone?: string;
+  roomId?: string;
+  roomName: string;
+  roomNumber?: string;
+  amount: number;
+  receivedDate: string;
+  status: DepositStatus;
+  reference: string;
+  notes?: string;
+  rentDeducted: number;
+  repairsDeducted: number;
+  totalDeductions: number;
+  refundableBalance: number;
+  refundAmount: number;
+  refundMethod?: PaymentMethod | string;
+  refundReference?: string;
+  refundDate?: string | null;
+  settledAt?: string | null;
+  settlementNotes?: string;
+  deductions: DepositDeduction[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SettlementSummary {
+  tenancyId: string | number;
+  tenantId: string | number;
+  tenantName: string;
+  roomId: string | number;
+  roomName: string;
+  startDate: string;
+  endDate?: string | null;
+  tenancyStatus: TenancyStatus;
+  deposit: {
+    id: string | number;
+    amount: number;
+    status: DepositStatus;
+    receivedDate: string;
+    reference: string;
+    rentDeducted: number;
+    repairsDeducted: number;
+    totalDeductions: number;
+    refundableBalance: number;
+    refundAmount: number;
+    settledAt?: string | null;
+  } | null;
+  eligibleArrears: {
+    total: number;
+    charges: Array<{
+      id: string | number;
+      month: string;
+      amount: number;
+      paidAmount: number;
+      balance: number;
+      dueDate: string;
+    }>;
+  };
+  maxDeductionAllowed: number;
+}
+
+export interface SettleDepositPayload {
+  endDate?: string;
+  settlementDate?: string;
+  rentDeduction: number;
+  repairDeductions: Array<{
+    description: string;
+    amount: number;
+    category: 'repair' | 'cleaning' | 'other';
+  }>;
+  refundAmount: number;
+  refundMethod?: string;
+  refundReference?: string;
+  refundDate?: string;
+  notes?: string;
+}
+

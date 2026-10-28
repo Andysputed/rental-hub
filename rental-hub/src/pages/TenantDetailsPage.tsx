@@ -9,7 +9,7 @@ import { formatKSh, formatDateShort } from '../utils/format';
 export const TenantDetailsPage: React.FC = () => {
   const { roomId, tenantId } = useParams<{ roomId?: string; tenantId?: string }>();
   const navigate = useNavigate();
-  const { rooms, tenants, tenancies, rentCharges, payments, settings, moveOutTenant } = useRental();
+  const { rooms, tenants, tenancies, rentCharges, payments, deposits, settings, moveOutTenant } = useRental();
 
   const [isMoveOutOpen, setIsMoveOutOpen] = useState(false);
 
@@ -367,6 +367,40 @@ export const TenantDetailsPage: React.FC = () => {
                 {formatKSh(tenancy.deposit || 0)}
               </span>
             </div>
+            {(() => {
+              const dep = deposits.find((d) => String(d.tenancyId) === String(tenancy.id));
+              if (!dep) return null;
+              return (
+                <>
+                  <div className="flex justify-between py-2">
+                    <span className="text-gray-500">Deposit status</span>
+                    <span className="font-semibold text-gray-900 capitalize">{dep.status}</span>
+                  </div>
+                  {dep.status !== 'held' && (
+                    <>
+                      {dep.rentDeducted > 0 && (
+                        <div className="flex justify-between py-2 text-amber-800">
+                          <span>Rent arrears deducted</span>
+                          <span className="font-semibold">- {formatKSh(dep.rentDeducted)}</span>
+                        </div>
+                      )}
+                      {dep.repairsDeducted > 0 && (
+                        <div className="flex justify-between py-2 text-amber-800">
+                          <span>Repairs deducted</span>
+                          <span className="font-semibold">- {formatKSh(dep.repairsDeducted)}</span>
+                        </div>
+                      )}
+                      {dep.refundAmount > 0 && (
+                        <div className="flex justify-between py-2 text-brand-700">
+                          <span>Refund disbursed</span>
+                          <span className="font-bold">{formatKSh(dep.refundAmount)}</span>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </>
+              );
+            })()}
             <div className="flex justify-between py-2">
               <span className="text-gray-500">Status</span>
               <span className="font-semibold text-gray-900 capitalize">{tenancy.status}</span>

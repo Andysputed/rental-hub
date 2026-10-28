@@ -13,6 +13,7 @@ import {
   Settings,
   Bell,
   Home,
+  ShieldCheck,
 } from 'lucide-react';
 import { useRental } from '../../context/RentalContext';
 
@@ -34,11 +35,12 @@ export const AppShell: React.FC = () => {
     if (path.startsWith('/expenses/add')) return 'Add expense';
     if (path.startsWith('/expenses')) return 'Expenses';
     if (path.startsWith('/reports')) return 'Reports';
+    if (path.startsWith('/deposits')) return 'Deposits';
     if (path.startsWith('/settings')) return 'Settings';
     return 'Overview';
   };
 
-  const isMoreActive = ['/tenants', '/rent-charges', '/expenses', '/reports', '/settings'].some((p) =>
+  const isMoreActive = ['/tenants', '/rent-charges', '/expenses', '/reports', '/deposits', '/settings'].some((p) =>
     location.pathname.startsWith(p)
   );
 
@@ -159,6 +161,20 @@ export const AppShell: React.FC = () => {
           >
             <PieChart size={18} />
             <span>Reports</span>
+          </NavLink>
+
+          <NavLink
+            to="/deposits"
+            className={({ isActive }) =>
+              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                isActive
+                  ? 'bg-[#EBF5F0] text-brand-700 font-semibold'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+              }`
+            }
+          >
+            <ShieldCheck size={18} />
+            <span>Deposits</span>
           </NavLink>
 
           <NavLink
@@ -297,6 +313,18 @@ export const AppShell: React.FC = () => {
                   <PieChart size={20} className="mb-2 text-brand-700" />
                   <span className="text-sm font-semibold text-gray-900">Reports</span>
                   <span className="text-xs text-gray-500">Cash summaries</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    navigate('/deposits');
+                    setMobileMenuOpen(false);
+                  }}
+                  className="flex flex-col items-start p-3 rounded-xl border border-gray-100 bg-gray-50/70 hover:bg-[#EBF5F0] hover:text-brand-700 text-left transition-colors"
+                >
+                  <ShieldCheck size={20} className="mb-2 text-brand-700" />
+                  <span className="text-sm font-semibold text-gray-900">Deposits</span>
+                  <span className="text-xs text-gray-500">Security & refunds</span>
                 </button>
 
                 <button

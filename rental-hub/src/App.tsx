@@ -14,6 +14,7 @@ import { ExpensesPage } from './pages/ExpensesPage';
 import { AddExpensePage } from './pages/AddExpensePage';
 import { ReportsPage } from './pages/ReportsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { DepositsPage } from './pages/DepositsPage';
 
 function App() {
   return (
@@ -34,6 +35,7 @@ function App() {
             <Route path="expenses" element={<ExpensesPage />} />
             <Route path="expenses/add" element={<AddExpensePage />} />
             <Route path="reports" element={<ReportsPage />} />
+            <Route path="deposits" element={<DepositsPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
