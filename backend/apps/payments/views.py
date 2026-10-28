@@ -8,6 +8,7 @@ from .serializers import (
     PaymentSerializer,
     RecordPaymentSerializer,
     DepositSerializer,
+    DepositSettlementSerializer,
 )
 
 
@@ -106,9 +107,9 @@ class DepositViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = DepositSerializer
 
     def get_queryset(self):
-        qs = Deposit.objects.all().select_related('tenancy__room', 'tenant')
+        qs = Deposit.objects.all().select_related('tenancy__room', 'tenant').prefetch_related('deductions')
         status_param = self.request.query_params.get('status')
-        if status_param in ('held', 'refunded', 'applied'):
+        if status_param in ('held', 'settled', 'refunded', 'applied'):
             qs = qs.filter(status=status_param)
 
         tenancy_id = self.request.query_params.get('tenancyId')
@@ -123,4 +124,26 @@ class DepositViewSet(viewsets.ReadOnlyModelViewSet):
         if room_id:
             qs = qs.filter(tenancy__room_id=room_id)
 
+        search = self.request.query_params.get('search', '').strip()
+        if search:
+            qs = qs.filter(
+                Q(tenant__full_name__icontains=search) |
+                Q(reference__icontains=search) |
+                Q(refund_reference__icontains=search) |
+                Q(tenancy__room__name__icontains=search)
+            )
+
         return qs.order_by('-received_date')
+
+    @action(detail=True, methods=['post'], url_path='settle')
+    def settle(self, request, pk=None):
+        deposit = self.get_object()
+        serializer = DepositSettlementSerializer(
+            data=request.data,
+            context={'deposit': deposit, 'tenancy': deposit.tenancy, 'request': request}
+        )
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        settled_deposit = serializer.save()
+        return Response(DepositSerializer(settled_deposit).data, status=status.HTTP_200_OK)
