@@ -35,6 +35,12 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     headers.set('Content-Type', 'application/json');
   }
 
+  // Attach auth token if available
+  const token = localStorage.getItem('rentalhub_auth_token');
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Token ${token}`);
+  }
+
   try {
     const response = await fetch(url, {
       ...options,
@@ -474,6 +480,8 @@ export const settingsApi = {
       location: raw.location,
       landlordName: raw.landlordName,
       landlordInitials: raw.landlordInitials,
+      landlordPhone: raw.landlordPhone || '',
+      landlordEmail: raw.landlordEmail || '',
       currency: raw.currency,
       defaultDueDay: Number(raw.defaultDueDay),
       autoGenerateCharges: Boolean(raw.autoGenerateCharges),
@@ -490,6 +498,8 @@ export const settingsApi = {
       location: raw.location,
       landlordName: raw.landlordName,
       landlordInitials: raw.landlordInitials,
+      landlordPhone: raw.landlordPhone || '',
+      landlordEmail: raw.landlordEmail || '',
       currency: raw.currency,
       defaultDueDay: Number(raw.defaultDueDay),
       autoGenerateCharges: Boolean(raw.autoGenerateCharges),

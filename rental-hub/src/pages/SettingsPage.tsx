@@ -10,6 +10,8 @@ export const SettingsPage: React.FC = () => {
 
   const [autoGen, setAutoGen] = useState(settings.autoGenerateCharges);
   const [dueDay, setDueDay] = useState(settings.defaultDueDay);
+  const [landlordPhone, setLandlordPhone] = useState(settings.landlordPhone || '');
+  const [landlordEmail, setLandlordEmail] = useState(settings.landlordEmail || '');
   const [roomRents, setRoomRents] = useState<Record<string, number>>({
     '01': settings.roomRents['01'] || 10000,
     '02': settings.roomRents['02'] || 10000,
@@ -29,6 +31,8 @@ export const SettingsPage: React.FC = () => {
       await updateSettings({
         autoGenerateCharges: autoGen,
         defaultDueDay: Number(dueDay),
+        landlordPhone: landlordPhone.trim(),
+        landlordEmail: landlordEmail.trim(),
         roomRents,
       });
       setSavedMessage('Settings saved successfully');
@@ -169,6 +173,45 @@ export const SettingsPage: React.FC = () => {
             <p className="text-[11px] text-gray-400 mt-1">
               Amounts are displayed as KSh throughout RentalHub.
             </p>
+          </div>
+        </div>
+
+        {/* Landlord Contact Card */}
+        <div className="bg-white border border-[#E5E7EB] rounded-2xl p-5 shadow-2xs space-y-3">
+          <div>
+            <h2 className="text-sm font-bold text-gray-900">Landlord contact</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Used in rent reminder messages sent via WhatsApp and SMS.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">
+              Phone number
+            </label>
+            <input
+              type="tel"
+              value={landlordPhone}
+              onChange={(e) => setLandlordPhone(e.target.value)}
+              placeholder="+254712345678"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-[#E5E7EB] bg-white text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-700/20 focus:border-brand-700"
+            />
+            <p className="text-[11px] text-gray-400 mt-1">
+              Include country code, e.g. +254712345678. Shown in reminder messages.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">
+              Email address
+            </label>
+            <input
+              type="email"
+              value={landlordEmail}
+              onChange={(e) => setLandlordEmail(e.target.value)}
+              placeholder="landlord@example.com"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-[#E5E7EB] bg-white text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-700/20 focus:border-brand-700"
+            />
           </div>
         </div>
 

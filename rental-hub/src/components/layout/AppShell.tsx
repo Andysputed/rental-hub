@@ -14,14 +14,22 @@ import {
   Bell,
   Home,
   ShieldCheck,
+  LogOut,
 } from 'lucide-react';
 import { useRental } from '../../context/RentalContext';
+import { useAuth } from '../../context/AuthContext';
 
 export const AppShell: React.FC = () => {
   const { settings } = useRental();
+  const { logout, user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login', { replace: true });
+  };
 
   const getBreadcrumbTitle = () => {
     const path = location.pathname;
@@ -47,23 +55,23 @@ export const AppShell: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#F8FAF9] flex flex-col md:flex-row text-gray-900 font-sans antialiased">
       {/* Desktop Sidebar */}
-      <aside className="no-print hidden md:flex md:w-64 flex-col fixed inset-y-0 z-30 bg-white border-r border-[#E5E7EB] px-4 py-5 select-none">
+      <aside className="no-print hidden md:flex md:w-64 flex-col fixed inset-y-0 z-30 bg-white border-r border-[#E5E7EB] px-3.5 py-4 select-none">
         {/* Brand */}
-        <div className="flex items-center gap-2.5 px-3 mb-6">
-          <div className="w-9 h-9 rounded-lg bg-brand-700 flex items-center justify-center text-white shadow-2xs">
-            <Home size={20} strokeWidth={2.2} />
+        <div className="flex items-center gap-2.5 px-3 mb-3.5">
+          <div className="w-8 h-8 rounded-lg bg-brand-700 flex items-center justify-center text-white shadow-2xs">
+            <Home size={18} strokeWidth={2.2} />
           </div>
-          <span className="text-xl font-bold tracking-tight text-gray-900">RentalHub</span>
+          <span className="text-lg font-bold tracking-tight text-gray-900">RentalHub</span>
         </div>
 
         {/* Property Card */}
-        <div className="bg-[#F9FAF9] border border-[#E5E7EB] rounded-xl p-3 mb-6">
-          <div className="text-sm font-semibold text-gray-900">{settings.propertyName}</div>
-          <div className="text-xs text-gray-500 mt-0.5">{settings.location}</div>
+        <div className="bg-[#F9FAF9] border border-[#E5E7EB] rounded-xl p-2.5 mb-3.5">
+          <div className="text-xs font-bold text-gray-900 truncate">{settings.propertyName}</div>
+          <div className="text-[11px] text-gray-500 mt-0.5 truncate">{settings.location}</div>
         </div>
 
         {/* Navigation links */}
-        <nav className="flex-1 space-y-1">
+        <nav className="flex-1 min-h-0 overflow-y-auto space-y-0.5 pr-0.5">
           <NavLink
             to="/"
             end
@@ -192,17 +200,29 @@ export const AppShell: React.FC = () => {
           </NavLink>
         </nav>
 
-        {/* Landlord profile at sidebar bottom */}
-        <div className="pt-4 mt-auto border-t border-[#E5E7EB] px-2">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-[#EBF5F0] text-brand-700 font-semibold text-xs flex items-center justify-center">
-              {settings.landlordInitials}
+        {/* Landlord profile at sidebar bottom — always docked & clearly visible */}
+        <div className="shrink-0 mt-auto pt-3 border-t border-[#E5E7EB] space-y-2">
+          <div className="flex items-center gap-2.5 p-2 rounded-xl bg-gray-50/80 border border-gray-100">
+            <div className="w-8 h-8 rounded-full bg-[#EBF5F0] text-brand-700 font-bold text-xs flex items-center justify-center shrink-0 border border-emerald-200">
+              {settings.landlordInitials || 'VK'}
             </div>
-            <div>
-              <div className="text-xs font-semibold text-gray-900">{settings.landlordName} · Landlord</div>
-              <div className="text-[11px] text-gray-500">Single-property workspace</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-bold text-gray-900 truncate">
+                {settings.landlordName || 'Veronicah Kaptingei'}
+              </div>
+              <div className="text-[11px] text-gray-500 truncate">
+                Landlord {user?.username ? `(@${user.username})` : ''}
+              </div>
             </div>
           </div>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-medium text-gray-500 hover:text-red-700 hover:bg-red-50 transition-colors cursor-pointer"
+          >
+            <LogOut size={13} />
+            <span>Sign out</span>
+          </button>
         </div>
       </aside>
 
@@ -238,6 +258,15 @@ export const AppShell: React.FC = () => {
               aria-label="Notifications"
             >
               <Bell size={18} />
+            </button>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-600 hover:text-red-700 hover:bg-red-50 transition-colors cursor-pointer"
+              title="Sign out"
+            >
+              <LogOut size={14} />
+              <span className="hidden lg:inline">Sign out</span>
             </button>
             <div className="w-8 h-8 rounded-full bg-[#EBF5F0] text-brand-700 font-semibold text-xs flex items-center justify-center">
               {settings.landlordInitials}
@@ -337,6 +366,35 @@ export const AppShell: React.FC = () => {
                   <Settings size={20} className="mb-2 text-brand-700" />
                   <span className="text-sm font-semibold text-gray-900">Rent settings</span>
                   <span className="text-xs text-gray-500">Defaults & monthly billing</span>
+                </button>
+              </div>
+
+              {/* Landlord profile in mobile slide-over */}
+              <div className="pt-3 border-t border-gray-100 space-y-2.5">
+                <div className="flex items-center gap-3 p-2.5 rounded-xl bg-gray-50 border border-gray-100">
+                  <div className="w-9 h-9 rounded-full bg-[#EBF5F0] text-brand-700 font-bold text-xs flex items-center justify-center shrink-0 border border-emerald-200">
+                    {settings.landlordInitials || 'VK'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-bold text-gray-900 truncate">
+                      {settings.landlordName || 'Veronicah Kaptingei'}
+                    </div>
+                    <div className="text-[11px] text-gray-500 truncate">
+                      Landlord {user?.username ? `(@${user.username})` : ''}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setMobileMenuOpen(false);
+                    await handleLogout();
+                  }}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl border border-red-100 bg-red-50 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors cursor-pointer"
+                >
+                  <LogOut size={15} />
+                  <span>Sign out</span>
                 </button>
               </div>
             </div>

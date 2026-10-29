@@ -88,15 +88,17 @@ interface RentalContextType {
   getPaymentById: (id: string) => Payment | undefined;
   getTenancyForRoom: (roomId: string) => Tenancy | undefined;
   getChargeForRoom: (roomId: string, month?: string) => RentCharge | undefined;
-  getOverdueCharges: () => (RentCharge & { tenantName: string; roomName: string; balance: number; isFormerTenant?: boolean; tenancyStatus?: string })[];
+  getOverdueCharges: () => (RentCharge & { tenantId?: string; tenantName: string; tenantPhone?: string; roomName: string; balance: number; isFormerTenant?: boolean; tenancyStatus?: string })[];
   resetToDefaultData: () => void;
 }
 
 const DEFAULT_SETTINGS: PropertySettings = {
   propertyName: 'Acacia House',
   location: 'Nairobi · 6 rooms',
-  landlordName: 'James M.',
-  landlordInitials: 'JM',
+  landlordName: 'Veronicah K.',
+  landlordInitials: 'VK',
+  landlordPhone: '',
+  landlordEmail: '',
   currency: 'KES',
   defaultDueDay: 5,
   autoGenerateCharges: true,
@@ -329,7 +331,9 @@ export const RentalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         const tenant = tenancy ? tenants.find((t) => String(t.id) === String(tenancy.tenantId)) : undefined;
         return {
           ...c,
+          tenantId: tenant ? String(tenant.id) : undefined,
           tenantName: tenant ? tenant.fullName : 'Unknown',
+          tenantPhone: tenant ? tenant.phone : undefined,
           roomName: room ? room.name : 'Unknown Room',
           balance: c.amount - c.paidAmount,
           isFormerTenant: tenancy ? tenancy.status === 'ended' : false,

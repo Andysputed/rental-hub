@@ -140,6 +140,8 @@ export interface PropertySettings {
   location: string;
   landlordName: string;
   landlordInitials: string;
+  landlordPhone: string;
+  landlordEmail: string;
   currency: string;
   defaultDueDay: number;
   autoGenerateCharges: boolean;
