@@ -1,6 +1,7 @@
 from decimal import Decimal
 from datetime import date
 from django.test import TestCase
+from django.contrib.auth.models import User
 from django.db import IntegrityError
 from rest_framework.test import APIClient
 from rest_framework import status
@@ -15,6 +16,8 @@ from apps.reports.services import get_dashboard_metrics, get_monthly_financial_r
 class TenancyHistoricalIsolationTests(TestCase):
     def setUp(self):
         self.client = APIClient()
+        self.user = User.objects.create_user(username='testlandlord', password='testpass123')
+        self.client.force_authenticate(user=self.user)
         self.property = Property.objects.create(
             name="Acacia House",
             location="Nairobi · 6 rooms",
@@ -22,8 +25,8 @@ class TenancyHistoricalIsolationTests(TestCase):
         )
         self.settings = PropertySettings.objects.create(
             property=self.property,
-            landlord_name="James M.",
-            landlord_initials="JM",
+            landlord_name="Veronicah K.",
+            landlord_initials="VK",
             default_due_day=5,
             auto_generate_charges=True
         )

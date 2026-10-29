@@ -20,8 +20,8 @@ def get_or_create_default_property():
     PropertySettings.objects.get_or_create(
         property=prop,
         defaults={
-            'landlord_name': 'James M.',
-            'landlord_initials': 'JM',
+            'landlord_name': 'Veronicah K.',
+            'landlord_initials': 'VK',
             'default_due_day': 5,
             'auto_generate_charges': True,
         }
@@ -64,6 +64,8 @@ class PropertySettingsView(APIView):
         data['currency'] = prop.currency
         data['landlordName'] = settings.landlord_name
         data['landlordInitials'] = settings.landlord_initials
+        data['landlordPhone'] = settings.landlord_phone
+        data['landlordEmail'] = settings.landlord_email
         data['defaultDueDay'] = settings.default_due_day
         data['autoGenerateCharges'] = settings.auto_generate_charges
         return Response(data)
@@ -85,6 +87,10 @@ class PropertySettingsView(APIView):
                 settings.landlord_name = request.data['landlordName']
             if 'landlordInitials' in request.data:
                 settings.landlord_initials = request.data['landlordInitials']
+            if 'landlordPhone' in request.data:
+                settings.landlord_phone = request.data['landlordPhone']
+            if 'landlordEmail' in request.data:
+                settings.landlord_email = request.data['landlordEmail']
             if 'defaultDueDay' in request.data:
                 settings.default_due_day = int(request.data['defaultDueDay'])
             if 'autoGenerateCharges' in request.data:
@@ -106,6 +112,8 @@ class PropertySettingsView(APIView):
         data['currency'] = prop.currency
         data['landlordName'] = settings.landlord_name
         data['landlordInitials'] = settings.landlord_initials
+        data['landlordPhone'] = settings.landlord_phone
+        data['landlordEmail'] = settings.landlord_email
         data['defaultDueDay'] = settings.default_due_day
         data['autoGenerateCharges'] = settings.auto_generate_charges
         return Response(data, status=status.HTTP_200_OK)

@@ -1,6 +1,7 @@
 from decimal import Decimal
 from datetime import date
 from django.test import TestCase
+from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 from rest_framework import status
 from apps.properties.models import Property, PropertySettings, Room
@@ -11,6 +12,8 @@ from apps.payments.models import Deposit
 class CoreAPIsTestCase(TestCase):
     def setUp(self):
         self.client = APIClient()
+        self.user = User.objects.create_user(username='testlandlord', password='testpass123')
+        self.client.force_authenticate(user=self.user)
         self.property = Property.objects.create(
             id=1,
             name="Acacia House",
@@ -19,8 +22,8 @@ class CoreAPIsTestCase(TestCase):
         )
         self.settings = PropertySettings.objects.create(
             property=self.property,
-            landlord_name="James M.",
-            landlord_initials="JM",
+            landlord_name="Veronicah K.",
+            landlord_initials="VK",
             default_due_day=5,
             auto_generate_charges=True
         )
@@ -75,12 +78,12 @@ class CoreAPIsTestCase(TestCase):
 
         patch_res = self.client.patch('/api/v1/settings/', {
             'defaultDueDay': 10,
-            'landlordName': 'James Mwangi',
+            'landlordName': 'Veronicah Kaptingei',
             'roomRents': {'01': 11000}
         }, format='json')
         self.assertEqual(patch_res.status_code, status.HTTP_200_OK)
         self.assertEqual(patch_res.data['defaultDueDay'], 10)
-        self.assertEqual(patch_res.data['landlordName'], 'James Mwangi')
+        self.assertEqual(patch_res.data['landlordName'], 'Veronicah Kaptingei')
 
         # Verify Room 01 rent updated
         r1 = Room.objects.get(property=self.property, number='01')

@@ -30,8 +30,8 @@ class Command(BaseCommand):
             PropertySettings.objects.get_or_create(
                 property=prop,
                 defaults={
-                    'landlord_name': 'James M.',
-                    'landlord_initials': 'JM',
+                    'landlord_name': 'Veronicah K.',
+                    'landlord_initials': 'VK',
                     'default_due_day': 5,
                     'auto_generate_charges': True,
                 }

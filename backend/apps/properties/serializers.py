@@ -11,6 +11,8 @@ class PropertySettingsSerializer(serializers.ModelSerializer):
             'id',
             'landlord_name',
             'landlord_initials',
+            'landlord_phone',
+            'landlord_email',
             'default_due_day',
             'auto_generate_charges',
             'roomRents',

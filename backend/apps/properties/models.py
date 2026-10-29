@@ -19,8 +19,10 @@ class Property(models.Model):
 
 class PropertySettings(models.Model):
     property = models.OneToOneField(Property, on_delete=models.CASCADE, related_name='settings')
-    landlord_name = models.CharField(max_length=100, default='James M.')
-    landlord_initials = models.CharField(max_length=10, default='JM')
+    landlord_name = models.CharField(max_length=100, default='Veronicah K.')
+    landlord_initials = models.CharField(max_length=10, default='VK')
+    landlord_phone = models.CharField(max_length=30, blank=True, default='')
+    landlord_email = models.EmailField(max_length=254, blank=True, default='')
     default_due_day = models.PositiveSmallIntegerField(default=5)
     auto_generate_charges = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)

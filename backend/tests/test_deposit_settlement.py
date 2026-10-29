@@ -1,6 +1,7 @@
 from decimal import Decimal
 from datetime import date
 from django.test import TestCase
+from django.contrib.auth.models import User
 from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework import status
@@ -13,6 +14,8 @@ from apps.rent.models import RentCharge
 class DepositSettlementTests(TestCase):
     def setUp(self):
         self.client = APIClient()
+        self.user = User.objects.create_user(username='testlandlord', password='testpass123')
+        self.client.force_authenticate(user=self.user)
         self.prop = Property.objects.create(name="Acacia House", currency="KES")
         self.room = Room.objects.create(
             property=self.prop,

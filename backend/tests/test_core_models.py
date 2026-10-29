@@ -18,8 +18,8 @@ class CoreModelsTestCase(TestCase):
         )
         self.settings = PropertySettings.objects.create(
             property=self.property,
-            landlord_name="James M.",
-            landlord_initials="JM",
+            landlord_name="Veronicah K.",
+            landlord_initials="VK",
             default_due_day=5,
             auto_generate_charges=True
         )
@@ -38,7 +38,7 @@ class CoreModelsTestCase(TestCase):
 
     def test_property_and_settings_creation(self):
         self.assertEqual(self.property.name, "Acacia House")
-        self.assertEqual(self.property.settings.landlord_name, "James M.")
+        self.assertEqual(self.property.settings.landlord_name, "Veronicah K.")
         self.assertEqual(self.property.settings.default_due_day, 5)
 
     def test_room_unique_number_per_property(self):

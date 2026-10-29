@@ -1,6 +1,7 @@
 from decimal import Decimal
 from datetime import date
 from django.test import TestCase
+from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 from rest_framework import status
 from apps.properties.models import Property, PropertySettings, Room
@@ -13,6 +14,8 @@ from apps.expenses.models import Expense
 class ReportingAndReconciliationTestCase(TestCase):
     def setUp(self):
         self.client = APIClient()
+        self.user = User.objects.create_user(username='testlandlord', password='testpass123')
+        self.client.force_authenticate(user=self.user)
         self.property = Property.objects.create(
             id=1,
             name="Acacia House",
@@ -21,8 +24,8 @@ class ReportingAndReconciliationTestCase(TestCase):
         )
         self.settings = PropertySettings.objects.create(
             property=self.property,
-            landlord_name="James M.",
-            landlord_initials="JM",
+            landlord_name="Veronicah K.",
+            landlord_initials="VK",
             default_due_day=5,
             auto_generate_charges=True
         )

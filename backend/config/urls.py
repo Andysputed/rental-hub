@@ -3,6 +3,8 @@ from django.urls import path, include
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    # Auth endpoints (login/logout/me) — open before the protected API
+    path('api/v1/', include('apps.properties.auth_urls')),
     # Core REST API v1 routes
     path('api/v1/', include('apps.properties.urls')),
     path('api/v1/', include('apps.tenants.urls')),
