@@ -4,7 +4,7 @@ import { Plus, ArrowRight, AlertCircle, ArrowDownLeft, FileText } from 'lucide-r
 import { useRental } from '../context/RentalContext';
 import { MonthSelector } from '../components/common/MonthSelector';
 import { RoomBadge } from '../components/common/RoomBadge';
-import { formatKSh, formatDateShort } from '../utils/format';
+import { formatKSh, formatDateShort, formatMonthYear, formatMonthShort } from '../utils/format';
 import { getWhatsAppNumber } from '../utils/phone';
 import { generateRentReminder } from '../utils/messages';
 
@@ -41,8 +41,8 @@ export const DashboardPage: React.FC = () => {
             <span className="hidden md:inline">A clear view of your property</span>
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            <span className="md:hidden">{settings.propertyName}, Nairobi · 19 October 2026</span>
-            <span className="hidden md:inline">October's rent, rooms and cash flow — all in one place.</span>
+            <span className="md:hidden">{settings.propertyName}, Nairobi · {formatMonthYear(selectedMonth)}</span>
+            <span className="hidden md:inline">{formatMonthYear(selectedMonth)} rent, rooms and cash flow — all in one place.</span>
           </p>
         </div>
 
@@ -69,7 +69,7 @@ export const DashboardPage: React.FC = () => {
         {/* Hero Card - Rent Received */}
         <div className="rounded-2xl p-5 bg-brand-700 text-white flex flex-col justify-between shadow-2xs">
           <div>
-            <div className="text-xs font-medium text-emerald-200">October rent received</div>
+            <div className="text-xs font-medium text-emerald-200">{formatMonthYear(selectedMonth)} rent received</div>
             <div className="text-3xl font-bold mt-1 tracking-tight">{formatKSh(totalRentReceived)}</div>
           </div>
           <div className="mt-4 pt-3 border-t border-emerald-800/60">
@@ -132,7 +132,7 @@ export const DashboardPage: React.FC = () => {
       {/* Mobile-only Expenses line & Record button */}
       <div className="md:hidden space-y-3">
         <div className="flex items-center justify-between text-xs text-gray-600 px-1 font-medium">
-          <span>October property expenses</span>
+          <span>{formatMonthYear(selectedMonth)} property expenses</span>
           <span className="font-semibold text-gray-900">{formatKSh(totalExpenses)}</span>
         </div>
 
@@ -151,7 +151,7 @@ export const DashboardPage: React.FC = () => {
         {/* Desktop-only Collection Card with Circular Donut */}
         <div className="hidden md:flex rounded-2xl p-6 bg-white border border-[#E5E7EB] flex-col justify-between shadow-2xs">
           <div className="flex items-center justify-between">
-            <h2 className="text-base font-bold text-gray-900">October rent collection</h2>
+            <h2 className="text-base font-bold text-gray-900">{formatMonthYear(selectedMonth)} rent collection</h2>
             <button
               onClick={() => navigate('/rent-charges')}
               className="text-xs font-semibold text-brand-700 hover:underline flex items-center gap-1 cursor-pointer"
@@ -206,7 +206,7 @@ export const DashboardPage: React.FC = () => {
           </div>
 
           <div className="text-[11px] text-gray-500 pt-2 border-t border-gray-100">
-            All 5 occupied rooms charged · Due 5 October
+            All {rooms.filter((r) => r.status === 'occupied').length} occupied rooms charged · Due {settings.defaultDueDay || 5} {formatMonthShort(selectedMonth)}
           </div>
         </div>
 
@@ -365,7 +365,7 @@ export const DashboardPage: React.FC = () => {
 
             <div className="flex items-center gap-2 text-xs font-medium text-amber-text bg-amber-border/60 border border-[#FDE68A] rounded-lg p-2.5 mb-3">
               <AlertCircle size={16} className="text-amber-text shrink-0" />
-              <span>{overdueItems.length} {overdueItems.length === 1 ? 'balance' : 'balances'} overdue · due 5 October</span>
+              <span>{overdueItems.length} {overdueItems.length === 1 ? 'balance' : 'balances'} overdue · due {settings.defaultDueDay || 5} {formatMonthShort(selectedMonth)}</span>
             </div>
 
             <div className="divide-y divide-gray-100">
@@ -463,7 +463,7 @@ export const DashboardPage: React.FC = () => {
       </div>
 
       <div className="text-[11px] text-gray-400 text-center pb-2">
-        Month to date · 1–19 October 2026. Deposits are excluded from rent received and net cash income.
+        Month of {formatMonthYear(selectedMonth)}. Deposits are excluded from rent received and net cash income.
       </div>
     </div>
   );

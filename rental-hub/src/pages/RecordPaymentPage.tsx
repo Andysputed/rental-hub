@@ -2,19 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Check, Smartphone, Banknote, Building2, Info } from 'lucide-react';
 import { useRental } from '../context/RentalContext';
-import { formatKSh } from '../utils/format';
+import { formatKSh, formatMonthYear, formatMonthShort } from '../utils/format';
 import type { PaymentMethod } from '../types';
 
 export const RecordPaymentPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { rooms, tenants, tenancies, rentCharges, recordPayment } = useRental();
+  const { rooms, tenants, tenancies, rentCharges, recordPayment, selectedMonth } = useRental();
 
   const [selectedRoomId, setSelectedRoomId] = useState<string>('');
-  const [amount, setAmount] = useState<number>(7500);
+  const [amount, setAmount] = useState<number>(0);
   const [method, setMethod] = useState<PaymentMethod>('mpesa');
-  const [reference, setReference] = useState<string>('UJ4R8K2M6P');
-  const [paymentDate, setPaymentDate] = useState<string>('2026-10-04');
+  const [reference, setReference] = useState<string>('');
+  const [paymentDate, setPaymentDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [error, setError] = useState<string | null>(null);
 
   // Synchronize room selection when rooms or query params are available
@@ -48,18 +48,20 @@ export const RecordPaymentPage: React.FC = () => {
       const rid = String(matchedRoom.id);
       setSelectedRoomId(rid);
       const t = tenancies.find((ten) => String(ten.roomId) === rid && ten.status === 'active');
-      const charge = t ? rentCharges.find((c) => String(c.tenancyId) === String(t.id) && c.month === '2026-10') : undefined;
+      const charge = t ? rentCharges.find((c) => String(c.tenancyId) === String(t.id) && c.month === selectedMonth) : undefined;
       if (charge) {
         const remaining = charge.amount - charge.paidAmount;
         setAmount(remaining > 0 ? remaining : charge.amount);
+      } else if (t) {
+        setAmount(t.monthlyRent || 10000);
       }
     }
-  }, [rooms, searchParams, tenancies, rentCharges]);
+  }, [rooms, searchParams, tenancies, rentCharges, selectedMonth]);
 
   const selectedTenancy = tenancies.find((t) => String(t.roomId) === String(selectedRoomId) && t.status === 'active');
   const selectedTenant = selectedTenancy ? tenants.find((t) => String(t.id) === String(selectedTenancy.tenantId)) : undefined;
   const currentCharge = selectedTenancy
-    ? rentCharges.find((c) => String(c.tenancyId) === String(selectedTenancy.id) && c.month === '2026-10')
+    ? rentCharges.find((c) => String(c.tenancyId) === String(selectedTenancy.id) && c.month === selectedMonth)
     : undefined;
 
   const totalChargeAmount = currentCharge ? currentCharge.amount : (selectedTenancy?.monthlyRent || 10000);
@@ -134,7 +136,7 @@ export const RecordPaymentPage: React.FC = () => {
             onChange={(e) => {
               setSelectedRoomId(e.target.value);
               const t = tenancies.find((ten) => String(ten.roomId) === String(e.target.value) && ten.status === 'active');
-              const charge = t ? rentCharges.find((c) => String(c.tenancyId) === String(t.id) && c.month === '2026-10') : undefined;
+              const charge = t ? rentCharges.find((c) => String(c.tenancyId) === String(t.id) && c.month === selectedMonth) : undefined;
               if (charge) {
                 const remaining = charge.amount - charge.paidAmount;
                 setAmount(remaining > 0 ? remaining : charge.amount);
@@ -289,13 +291,13 @@ export const RecordPaymentPage: React.FC = () => {
           />
         </div>
 
-        {/* Live Calculation Box: Apply to October rent */}
+        {/* Live Calculation Box: Apply to selected month rent */}
         <div className="bg-white border border-[#E5E7EB] rounded-2xl p-5 shadow-2xs space-y-2.5">
-          <div className="text-sm font-bold text-gray-900">Apply to October rent</div>
+          <div className="text-sm font-bold text-gray-900">Apply to {formatMonthYear(selectedMonth)} rent</div>
 
           <div className="space-y-1.5 text-xs">
             <div className="flex justify-between text-gray-600">
-              <span>Charge · due 5 Oct 2026</span>
+              <span>Charge · due {selectedTenancy?.rentDueDay || 5} {formatMonthShort(selectedMonth)}</span>
               <span className="font-semibold text-gray-900">{formatKSh(totalChargeAmount)}</span>
             </div>
             <div className="flex justify-between text-gray-600">
@@ -317,7 +319,7 @@ export const RecordPaymentPage: React.FC = () => {
             {remainingBalance === 0 ? (
               <span className="text-[#0D5B46] font-medium">Full payment · Charge will be cleared.</span>
             ) : (
-              `Partial payment · ${formatKSh(remainingBalance)} remains on the October charge.`
+              `Partial payment · ${formatKSh(remainingBalance)} remains on the ${formatMonthShort(selectedMonth)} charge.`
             )}
           </div>
         </div>

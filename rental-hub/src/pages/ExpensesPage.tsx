@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, Wrench, Zap, Droplets, Sparkles } from 'lucide-react';
 import { useRental } from '../context/RentalContext';
 import { MonthSelector } from '../components/common/MonthSelector';
-import { formatKSh, formatDateShort } from '../utils/format';
+import { formatKSh, formatDateShort, formatMonthYear } from '../utils/format';
 import type { ExpenseCategory } from '../types';
 
 export const ExpensesPage: React.FC = () => {
@@ -66,10 +66,10 @@ export const ExpensesPage: React.FC = () => {
 
       {/* Monthly Expenses Hero Card */}
       <div className="bg-white border border-[#E5E7EB] rounded-2xl p-5 shadow-2xs">
-        <div className="text-xs font-medium text-gray-500">October expenses</div>
+        <div className="text-xs font-medium text-gray-500">{formatMonthYear(selectedMonth)} expenses</div>
         <div className="text-3xl font-bold text-gray-900 mt-1">{formatKSh(totalExpenses)}</div>
         <div className="text-xs text-gray-400 mt-2">
-          {currentMonthExpenses.length} expenses · 3 categories
+          {currentMonthExpenses.length} {currentMonthExpenses.length === 1 ? 'expense' : 'expenses'} · 3 categories
         </div>
       </div>
 
@@ -104,43 +104,49 @@ export const ExpensesPage: React.FC = () => {
         </div>
       </div>
 
-      {/* October Expenses List */}
+      {/* Expenses List */}
       <div className="space-y-3">
         <div className="flex items-center justify-between text-xs text-gray-500 font-medium">
-          <span>October expenses</span>
+          <span>{formatMonthYear(selectedMonth)} expenses</span>
           <span>Newest first</span>
         </div>
 
-        {currentMonthExpenses.map((exp) => (
-          <div
-            key={exp.id}
-            className="bg-white border border-[#E5E7EB] rounded-2xl p-4 sm:p-5 shadow-2xs flex items-center justify-between"
-          >
-            <div className="flex items-center gap-3.5">
-              <div className="w-10 h-10 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center shrink-0">
-                {getCategoryIcon(exp.category, exp.title)}
+        {currentMonthExpenses.length === 0 ? (
+          <div className="bg-white border border-[#E5E7EB] rounded-2xl p-8 text-center text-xs text-gray-400">
+            No expenses recorded for {formatMonthYear(selectedMonth)}.
+          </div>
+        ) : (
+          currentMonthExpenses.map((exp) => (
+            <div
+              key={exp.id}
+              className="bg-white border border-[#E5E7EB] rounded-2xl p-4 sm:p-5 shadow-2xs flex items-center justify-between"
+            >
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center shrink-0">
+                  {getCategoryIcon(exp.category, exp.title)}
+                </div>
+                <div>
+                  <div className="text-sm font-bold text-gray-900">{exp.title}</div>
+                  <div className="text-xs text-gray-500">{formatDateShort(exp.date)}</div>
+                  <div className="mt-1">
+                    <span className="inline-block px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600 capitalize">
+                      {exp.category}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div>
-                <div className="text-sm font-bold text-gray-900">{exp.title}</div>
-                <div className="text-xs text-gray-500">{formatDateShort(exp.date)}</div>
-                <div className="mt-1">
-                  <span className="inline-block px-2 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600 capitalize">
-                    {exp.category}
-                  </span>
+
+              <div className="text-right">
+                <div className="text-sm font-bold text-gray-900">
+                  {Math.round(exp.amount).toLocaleString('en-KE')}
+                </div>
+                <div className="text-xs text-gray-400 capitalize mt-1">
+                  {exp.method === 'mpesa' ? 'M-Pesa' : exp.method === 'cash' ? 'Cash' : 'Bank'} · KSh
                 </div>
               </div>
             </div>
-
-            <div className="text-right">
-              <div className="text-sm font-bold text-gray-900">
-                {Math.round(exp.amount).toLocaleString('en-KE')}
-              </div>
-              <div className="text-xs text-gray-400 capitalize mt-1">
-                {exp.method === 'mpesa' ? 'M-Pesa' : exp.method === 'cash' ? 'Cash' : 'Bank'} · KSh
-              </div>
-            </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
 
       <div className="text-[11px] text-gray-400 text-center pb-2">

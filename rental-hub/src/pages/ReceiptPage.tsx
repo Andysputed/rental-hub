@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, Download, CheckCircle2, Home, Check, X, Copy } from 'lucide-react';
 import { useRental } from '../context/RentalContext';
 import { Badge } from '../components/common/Badge';
-import { formatKSh, formatDateShort, numberToWordsKSh } from '../utils/format';
+import { formatKSh, formatDateShort, numberToWordsKSh, formatMonthYear } from '../utils/format';
 import { getWhatsAppNumber } from '../utils/phone';
 import { generateReceiptShareMessage } from '../utils/messages';
 import { downloadReceiptPdf, getReceiptPdfFile, type ReceiptPdfData } from '../utils/receiptPdf';
@@ -36,11 +36,16 @@ export const ReceiptPage: React.FC = () => {
   const room = rooms.find((r) => String(r.id) === String(payment.roomId));
   const tenant = tenants.find((t) => String(t.id) === String(payment.tenantId));
   const charge =
-    rentCharges.find((c) => String(c.id) === String(payment.chargeId)) ||
+    (payment.chargeId ? rentCharges.find((c) => String(c.id) === String(payment.chargeId)) : undefined) ||
     rentCharges.find((c) => String(c.tenancyId) === String(payment.tenancyId));
 
   const chargeAmount = charge ? charge.amount : 10000;
   const remainingBalance = Math.max(0, chargeAmount - (charge ? charge.paidAmount : payment.amount));
+  const monthName = charge?.month
+    ? formatMonthYear(charge.month)
+    : payment.date
+    ? formatMonthYear(payment.date.slice(0, 7))
+    : 'Rent';
 
   const receiptPdfData: ReceiptPdfData = {
     payment,
@@ -49,7 +54,7 @@ export const ReceiptPage: React.FC = () => {
     settings,
     chargeAmount,
     remainingBalance,
-    monthName: 'October 2026',
+    monthName,
   };
 
   const handlePrint = () => {
@@ -292,7 +297,7 @@ export const ReceiptPage: React.FC = () => {
 
         {/* Allocation */}
         <div className="space-y-2 text-xs">
-          <div className="font-semibold text-gray-900">Allocation · October 2026 rent</div>
+          <div className="font-semibold text-gray-900">Allocation · {monthName} rent</div>
           <div className="flex justify-between text-gray-600">
             <span>Monthly rent charge</span>
             <span className="font-semibold text-gray-900">{formatKSh(chargeAmount)}</span>

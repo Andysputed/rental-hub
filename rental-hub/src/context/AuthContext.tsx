@@ -93,6 +93,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const { token: newToken, ...userData } = data;
+    try {
+      sessionStorage.removeItem('rentalhub_selected_month');
+    } catch {
+      // ignore
+    }
     localStorage.setItem(TOKEN_STORAGE_KEY, newToken);
     setToken(newToken);
     setUser({
@@ -115,6 +120,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch {
         // Network error — clear local state regardless
       }
+    }
+    try {
+      sessionStorage.removeItem('rentalhub_selected_month');
+    } catch {
+      // ignore
     }
     localStorage.removeItem(TOKEN_STORAGE_KEY);
     setToken(null);

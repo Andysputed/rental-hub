@@ -3,6 +3,43 @@ export function formatKSh(amount: number, includePrefix = true): string {
   return includePrefix ? `KSh ${formatted}` : formatted;
 }
 
+export function getCurrentMonth(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
+}
+
+export function formatMonthYear(monthStr: string): string {
+  if (!monthStr) return '';
+  const [year, month] = monthStr.split('-').map(Number);
+  if (!year || !month) return monthStr;
+  const date = new Date(year, month - 1, 1);
+  return date.toLocaleDateString('en-GB', {
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
+export function formatMonthShort(monthStr: string): string {
+  if (!monthStr) return '';
+  const [year, month] = monthStr.split('-').map(Number);
+  if (!year || !month) return monthStr;
+  const date = new Date(year, month - 1, 1);
+  return date.toLocaleDateString('en-GB', {
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+export function getRelativeMonth(monthStr: string, offsetMonths: number): string {
+  if (!monthStr) return getCurrentMonth();
+  const [year, month] = monthStr.split('-').map(Number);
+  if (!year || !month) return getCurrentMonth();
+  const date = new Date(year, month - 1 + offsetMonths, 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
 export function formatDateShort(dateStr: string): string {
   if (!dateStr) return '';
   const date = new Date(dateStr);

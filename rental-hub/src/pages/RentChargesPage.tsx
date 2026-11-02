@@ -4,7 +4,7 @@ import { ArrowLeft, Calendar, CheckCircle2 } from 'lucide-react';
 import { useRental } from '../context/RentalContext';
 import { MonthSelector } from '../components/common/MonthSelector';
 import { Badge } from '../components/common/Badge';
-import { formatKSh } from '../utils/format';
+import { formatKSh, formatMonthYear, formatMonthShort } from '../utils/format';
 
 export const RentChargesPage: React.FC = () => {
   const navigate = useNavigate();
@@ -66,7 +66,7 @@ export const RentChargesPage: React.FC = () => {
       {/* Summary Box */}
       <div className="bg-white border border-[#E5E7EB] rounded-2xl p-5 shadow-2xs divide-y divide-gray-100 text-xs">
         <div className="flex justify-between py-2 text-gray-600">
-          <span>October rent charged</span>
+          <span>{formatMonthYear(selectedMonth)} rent charged</span>
           <span className="font-bold text-gray-900">{formatKSh(totalRentCharged)}</span>
         </div>
         <div className="flex justify-between py-2 text-gray-600">
@@ -83,7 +83,7 @@ export const RentChargesPage: React.FC = () => {
       <div className="flex items-center justify-between text-xs px-1">
         <div className="flex items-center gap-2 text-gray-700 font-semibold">
           <Calendar size={16} className="text-brand-700" />
-          <span>Due 5 October 2026</span>
+          <span>Due {settings.defaultDueDay || 5} {formatMonthYear(selectedMonth)}</span>
         </div>
         <button
           onClick={() => navigate('/settings')}
@@ -116,7 +116,7 @@ export const RentChargesPage: React.FC = () => {
               </div>
 
               <div className="text-xs text-gray-500">
-                {tenant?.fullName} · Due 5 Oct
+                {tenant?.fullName} · Due {settings.defaultDueDay || 5} {formatMonthShort(selectedMonth)}
               </div>
 
               <div className="flex items-center justify-between text-xs pt-2 border-t border-gray-100">
@@ -130,9 +130,16 @@ export const RentChargesPage: React.FC = () => {
         })}
 
         {/* Vacant Room Notice */}
-        <div className="p-3 bg-[#F9FAFB] rounded-xl text-xs text-gray-500 text-center border border-dashed border-gray-200">
-          Room 06 is vacant. No October charge generated.
-        </div>
+        {rooms
+          .filter((r) => r.status === 'vacant')
+          .map((vr) => (
+            <div
+              key={vr.id}
+              className="p-3 bg-[#F9FAFB] rounded-xl text-xs text-gray-500 text-center border border-dashed border-gray-200"
+            >
+              {vr.name} is vacant. No {formatMonthShort(selectedMonth)} charge generated.
+            </div>
+          ))}
       </div>
 
       {/* Bottom Generate Charges Card */}
@@ -144,9 +151,9 @@ export const RentChargesPage: React.FC = () => {
           </div>
         ) : (
           <div>
-            <div className="text-sm font-bold text-gray-900">October charges are up to date</div>
+            <div className="text-sm font-bold text-gray-900">{formatMonthYear(selectedMonth)} charges are up to date</div>
             <div className="text-xs text-gray-600 mt-0.5">
-              5 charges generated. Existing charges will not be duplicated.
+              {currentMonthCharges.length} {currentMonthCharges.length === 1 ? 'charge' : 'charges'} generated for {formatMonthYear(selectedMonth)}. Existing charges will not be duplicated.
             </div>
           </div>
         )}

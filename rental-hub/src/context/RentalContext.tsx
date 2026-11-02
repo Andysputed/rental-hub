@@ -10,6 +10,7 @@ import {
   expensesApi,
   settingsApi,
 } from '../services/api';
+import { getCurrentMonth } from '../utils/format';
 
 interface RecordPaymentInput {
   tenantId?: string;
@@ -115,7 +116,27 @@ const DEFAULT_SETTINGS: PropertySettings = {
 const RentalContext = createContext<RentalContextType | undefined>(undefined);
 
 export const RentalProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [selectedMonth, setSelectedMonth] = useState<string>('2026-10');
+  const [selectedMonth, setSelectedMonthState] = useState<string>(() => {
+    try {
+      const stored = sessionStorage.getItem('rentalhub_selected_month');
+      if (stored && /^\d{4}-(0[1-9]|1[0-2])$/.test(stored)) {
+        return stored;
+      }
+    } catch {
+      // fallback
+    }
+    return getCurrentMonth();
+  });
+
+  const setSelectedMonth = useCallback((month: string) => {
+    if (!month || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return;
+    setSelectedMonthState(month);
+    try {
+      sessionStorage.setItem('rentalhub_selected_month', month);
+    } catch {
+      // fallback
+    }
+  }, []);
   const [settings, setSettings] = useState<PropertySettings>(DEFAULT_SETTINGS);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);

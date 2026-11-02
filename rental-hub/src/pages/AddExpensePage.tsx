@@ -2,15 +2,16 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Check, Info } from 'lucide-react';
 import { useRental } from '../context/RentalContext';
+import { formatMonthYear } from '../utils/format';
 import type { ExpenseCategory, PaymentMethod } from '../types';
 
 export const AddExpensePage: React.FC = () => {
   const navigate = useNavigate();
-  const { addExpense, settings, totalExpenses } = useRental();
+  const { addExpense, settings, totalExpenses, selectedMonth } = useRental();
 
   const [category, setCategory] = useState<ExpenseCategory>('maintenance');
   const [amount, setAmount] = useState<number>(0);
-  const [date, setDate] = useState<string>('2026-10-19');
+  const [date, setDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [description, setDescription] = useState<string>('');
   const [method, setMethod] = useState<PaymentMethod>('mpesa');
   const [reference, setReference] = useState<string>('');
@@ -183,7 +184,7 @@ export const AddExpensePage: React.FC = () => {
           </div>
           <div className="flex justify-between text-gray-600">
             <span>Reporting month</span>
-            <span className="font-semibold text-gray-900">October 2026</span>
+            <span className="font-semibold text-gray-900">{formatMonthYear(date ? date.slice(0, 7) : selectedMonth)}</span>
           </div>
           <div className="text-[11px] text-gray-400 pt-1 border-t border-gray-100">
             This draft is not included in the KSh {Math.round(totalExpenses).toLocaleString('en-KE')} expense total until saved.

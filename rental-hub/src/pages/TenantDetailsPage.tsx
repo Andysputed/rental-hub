@@ -4,14 +4,14 @@ import { ArrowLeft, Phone, MessageSquare, Plus, FileText, ChevronRight, LogOut, 
 import { useRental } from '../context/RentalContext';
 import { Badge } from '../components/common/Badge';
 import { MoveOutModal } from '../components/common/MoveOutModal';
-import { formatKSh, formatDateShort } from '../utils/format';
+import { formatKSh, formatDateShort, formatMonthYear, formatMonthShort } from '../utils/format';
 import { getWhatsAppNumber, normalizeKenyanPhone, isValidPhone } from '../utils/phone';
 import { generateRentReminder } from '../utils/messages';
 
 export const TenantDetailsPage: React.FC = () => {
   const { roomId, tenantId } = useParams<{ roomId?: string; tenantId?: string }>();
   const navigate = useNavigate();
-  const { rooms, tenants, tenancies, rentCharges, payments, deposits, settings, moveOutTenant } = useRental();
+  const { rooms, tenants, tenancies, rentCharges, payments, deposits, settings, moveOutTenant, selectedMonth } = useRental();
 
   const [isMoveOutOpen, setIsMoveOutOpen] = useState(false);
 
@@ -148,7 +148,7 @@ export const TenantDetailsPage: React.FC = () => {
 
   // Strict tenancy isolation: charges and payments belong strictly to THIS tenancy!
   const charge = tenancy
-    ? rentCharges.find((c) => String(c.tenancyId) === String(tenancy.id) && c.month === '2026-10')
+    ? rentCharges.find((c) => String(c.tenancyId) === String(tenancy.id) && c.month === selectedMonth)
     : undefined;
   const tenantPayments = tenancy
     ? payments.filter((p) => String(p.tenancyId) === String(tenancy.id))
@@ -377,10 +377,10 @@ export const TenantDetailsPage: React.FC = () => {
       >
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold text-gray-600">
-            {isActive ? 'October balance' : 'Outstanding historical balance'}
+            {isActive ? `${formatMonthYear(selectedMonth)} balance` : 'Outstanding historical balance'}
           </span>
           <Badge variant={isOverdue ? 'overdue' : charge ? 'paid' : 'neutral'}>
-            {isOverdue ? 'Overdue' : charge ? 'Paid' : 'No charges for October'}
+            {isOverdue ? 'Overdue' : charge ? 'Paid' : `No charges for ${formatMonthShort(selectedMonth)}`}
           </Badge>
         </div>
 
@@ -388,12 +388,12 @@ export const TenantDetailsPage: React.FC = () => {
           <div className="text-3xl font-bold text-gray-900 tracking-tight">{formatKSh(balance)}</div>
           {isOverdue && (
             <div className="text-xs text-amber-text font-medium mt-1">
-              Due {charge?.dueDate ? formatDateShort(charge.dueDate) : '5 Oct'} · Outstanding on this tenancy
+              Due {charge?.dueDate ? formatDateShort(charge.dueDate) : `${settings.defaultDueDay || 5} ${formatMonthShort(selectedMonth)}`} · Outstanding on this tenancy
             </div>
           )}
           {!charge && (
             <div className="text-xs text-gray-500 font-medium mt-1">
-              Clean ledger. No rent charge generated yet for October.
+              Clean ledger. No rent charge generated yet for {formatMonthYear(selectedMonth)}.
             </div>
           )}
         </div>

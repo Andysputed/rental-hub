@@ -4,11 +4,12 @@ import { UserPlus, ChevronRight, Phone, Mail, LogOut, Search } from 'lucide-reac
 import { useRental } from '../context/RentalContext';
 import { Badge } from '../components/common/Badge';
 import { MoveOutModal } from '../components/common/MoveOutModal';
-import { formatKSh } from '../utils/format';
+import { MonthSelector } from '../components/common/MonthSelector';
+import { formatKSh, formatMonthYear, formatMonthShort } from '../utils/format';
 
 export const TenantsPage: React.FC = () => {
   const navigate = useNavigate();
-  const { tenants, rooms, tenancies, rentCharges, settings, moveOutTenant } = useRental();
+  const { tenants, rooms, tenancies, rentCharges, settings, moveOutTenant, selectedMonth, setSelectedMonth } = useRental();
 
   const [filter, setFilter] = useState<'all' | 'active' | 'former'>('all');
   const [search, setSearch] = useState('');
@@ -65,6 +66,14 @@ export const TenantsPage: React.FC = () => {
           <UserPlus size={18} />
           <span>Register tenant</span>
         </button>
+      </div>
+
+      {/* Month Switcher */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <MonthSelector currentMonth={selectedMonth} onChange={setSelectedMonth} className="w-full sm:w-64" />
+        <span className="hidden md:inline text-xs text-gray-500 font-medium">
+          Reporting period: {formatMonthYear(selectedMonth)}
+        </span>
       </div>
 
       {/* Filter Tabs and Search */}
@@ -133,7 +142,7 @@ export const TenantsPage: React.FC = () => {
           const tenancy = activeTenancy || historicalTenancy;
           const room = rooms.find((r) => String(r.id) === String(tenancy?.roomId));
           const charge = tenancy
-            ? rentCharges.find((c) => String(c.tenancyId) === String(tenancy.id) && c.month === '2026-10')
+            ? rentCharges.find((c) => String(c.tenancyId) === String(tenancy.id) && c.month === selectedMonth)
             : undefined;
           const balance = charge ? charge.amount - charge.paidAmount : 0;
           const isActive = !!activeTenancy;

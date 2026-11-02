@@ -284,10 +284,20 @@ export const rentChargesApi = {
 
 // 5. Payments API
 export const paymentsApi = {
-  list: async (params?: { method?: string; roomId?: string | number; search?: string }): Promise<Payment[]> => {
+  list: async (params?: {
+    method?: string;
+    roomId?: string | number;
+    tenantId?: string | number;
+    tenancyId?: string | number;
+    month?: string;
+    search?: string;
+  }): Promise<Payment[]> => {
     const sp = new URLSearchParams();
     if (params?.method) sp.append('method', params.method);
     if (params?.roomId) sp.append('roomId', String(params.roomId));
+    if (params?.tenantId) sp.append('tenantId', String(params.tenantId));
+    if (params?.tenancyId) sp.append('tenancyId', String(params.tenancyId));
+    if (params?.month) sp.append('month', params.month);
     if (params?.search) sp.append('search', params.search);
     const qs = sp.toString() ? `?${sp.toString()}` : '';
     const raw = await request<any[]>(`/payments/${qs}`);

@@ -4,7 +4,7 @@ import { ArrowLeft, Download, ArrowRight } from 'lucide-react';
 import { useRental } from '../context/RentalContext';
 import { MonthSelector } from '../components/common/MonthSelector';
 import { RoomBadge } from '../components/common/RoomBadge';
-import { formatKSh, formatDateShort } from '../utils/format';
+import { formatKSh, formatDateShort, formatMonthYear, formatMonthShort } from '../utils/format';
 
 export const ReportsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -49,12 +49,12 @@ export const ReportsPage: React.FC = () => {
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-gray-900">
             <span className="md:hidden">Monthly report</span>
-            <span className="hidden md:inline">October financial report</span>
+            <span className="hidden md:inline">{formatMonthYear(selectedMonth)} financial report</span>
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            <span className="md:hidden">{settings.propertyName} · As of 19 October 2026</span>
+            <span className="md:hidden">{settings.propertyName} · {formatMonthYear(selectedMonth)}</span>
             <span className="hidden md:inline">
-              {settings.propertyName}, Nairobi · Cash-basis results for 1–19 October 2026.
+              {settings.propertyName}, Nairobi · Cash-basis results for {formatMonthYear(selectedMonth)}.
             </span>
           </p>
         </div>
@@ -66,7 +66,7 @@ export const ReportsPage: React.FC = () => {
         >
           <Download size={18} />
           <span>
-            <span className="md:hidden">Export October report</span>
+            <span className="md:hidden">Export {formatMonthShort(selectedMonth)} report</span>
             <span className="hidden md:inline">Export report</span>
           </span>
         </button>
@@ -136,7 +136,7 @@ export const ReportsPage: React.FC = () => {
             </div>
           </div>
           <div className="text-xs text-amber-text font-medium pt-1">
-            3 overdue balances · Due 5 October 2026
+            {overdueItems.length} overdue {overdueItems.length === 1 ? 'balance' : 'balances'} · Due {settings.defaultDueDay || 5} {formatMonthYear(selectedMonth)}
           </div>
         </div>
 
@@ -205,7 +205,7 @@ export const ReportsPage: React.FC = () => {
           </div>
 
           <div className="text-[11px] text-gray-400 pt-2 border-t border-gray-100">
-            <span className="md:hidden">Actual cash in and out · KSh · 1–19 October</span>
+            <span className="md:hidden">Actual cash in and out · KSh · {formatMonthYear(selectedMonth)}</span>
             <span className="hidden md:inline">
               Net cash income uses rent actually received, not rent charged. Deposits are excluded.
             </span>
@@ -300,7 +300,7 @@ export const ReportsPage: React.FC = () => {
         <div className="bg-white border border-[#E5E7EB] rounded-2xl p-5 sm:p-6 shadow-2xs space-y-3">
           <h2 className="text-base font-bold text-gray-900">Outstanding rent</h2>
           <div className="text-xs text-amber-text font-medium">
-            Due 5 October · 14 days overdue
+            Due {settings.defaultDueDay || 5} {formatMonthShort(selectedMonth)} · Outstanding balances
           </div>
 
           <div className="divide-y divide-gray-100 text-xs">

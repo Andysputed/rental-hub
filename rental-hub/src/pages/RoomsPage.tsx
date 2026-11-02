@@ -5,11 +5,12 @@ import { useRental } from '../context/RentalContext';
 import { Badge } from '../components/common/Badge';
 import { RoomBadge } from '../components/common/RoomBadge';
 import { MoveOutModal } from '../components/common/MoveOutModal';
-import { formatKSh } from '../utils/format';
+import { MonthSelector } from '../components/common/MonthSelector';
+import { formatKSh, formatMonthYear, formatMonthShort } from '../utils/format';
 
 export const RoomsPage: React.FC = () => {
   const navigate = useNavigate();
-  const { rooms, tenants, tenancies, rentCharges, settings, totalRentCharged, totalRentReceived, totalOutstanding, moveOutTenant } =
+  const { rooms, tenants, tenancies, rentCharges, settings, totalRentCharged, totalRentReceived, totalOutstanding, moveOutTenant, selectedMonth, setSelectedMonth } =
     useRental();
 
   const [filter, setFilter] = useState<'all' | 'occupied' | 'vacant'>('all');
@@ -54,6 +55,14 @@ export const RoomsPage: React.FC = () => {
           <UserPlus size={18} />
           <span>Register tenant</span>
         </button>
+      </div>
+
+      {/* Month Switcher */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <MonthSelector currentMonth={selectedMonth} onChange={setSelectedMonth} className="w-full sm:w-64" />
+        <span className="hidden md:inline text-xs text-gray-500 font-medium">
+          {settings.propertyName} · 6 rooms · {formatMonthYear(selectedMonth)}
+        </span>
       </div>
 
       {/* Desktop Stat Cards */}
@@ -153,7 +162,7 @@ export const RoomsPage: React.FC = () => {
         </div>
 
         <span className="hidden md:inline text-xs text-gray-400">
-          October 2026 rent · Amounts in KSh
+          {formatMonthYear(selectedMonth)} rent · Amounts in KSh
         </span>
       </div>
 
@@ -163,7 +172,7 @@ export const RoomsPage: React.FC = () => {
           const tenancy = tenancies.find((t) => String(t.roomId) === String(room.id) && t.status === 'active');
           const tenant = tenancy ? tenants.find((t) => String(t.id) === String(tenancy.tenantId)) : undefined;
           const charge = tenancy
-            ? rentCharges.find((c) => String(c.tenancyId) === String(tenancy.id) && c.month === '2026-10')
+            ? rentCharges.find((c) => String(c.tenancyId) === String(tenancy.id) && c.month === selectedMonth)
             : undefined;
           const balance = charge ? charge.amount - charge.paidAmount : 0;
           const isPaid = charge && balance === 0;
@@ -182,7 +191,7 @@ export const RoomsPage: React.FC = () => {
                 <div>
                   <div className="text-sm font-semibold text-gray-900">Ready for a new tenant</div>
                   <div className="text-xs text-gray-500 mt-1">
-                    {formatKSh(room.defaultRent)} / month. No tenant assigned and no October rent charged.
+                    {formatKSh(room.defaultRent)} / month. No tenant assigned and no {formatMonthShort(selectedMonth)} rent charged.
                   </div>
                 </div>
 
@@ -220,7 +229,7 @@ export const RoomsPage: React.FC = () => {
                 <span className="text-gray-500">{formatKSh(tenancy?.monthlyRent || room.defaultRent)} / month</span>
                 <div className="flex items-center gap-2">
                   {isPaid ? (
-                    <span className="font-semibold text-[#0D5B46]">October paid</span>
+                    <span className="font-semibold text-[#0D5B46]">{formatMonthShort(selectedMonth)} paid</span>
                   ) : (
                     <span className="font-semibold text-amber-text">Overdue · {formatKSh(balance)}</span>
                   )}
@@ -270,7 +279,7 @@ export const RoomsPage: React.FC = () => {
               const tenancy = tenancies.find((t) => String(t.roomId) === String(room.id) && t.status === 'active');
               const tenant = tenancy ? tenants.find((t) => String(t.id) === String(tenancy.tenantId)) : undefined;
               const charge = tenancy
-                ? rentCharges.find((c) => String(c.tenancyId) === String(tenancy.id) && c.month === '2026-10')
+                ? rentCharges.find((c) => String(c.tenancyId) === String(tenancy.id) && c.month === selectedMonth)
                 : undefined;
               const balance = charge ? charge.amount - charge.paidAmount : 0;
 
@@ -379,7 +388,7 @@ export const RoomsPage: React.FC = () => {
         {/* Desktop Table Footer */}
         <div className="p-4 bg-gray-50/50 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
           <div>
-            {occupiedCount} occupied · {vacantCount} vacant · Due 5 October
+            {occupiedCount} occupied · {vacantCount} vacant · Due {settings.defaultDueDay || 5} {formatMonthShort(selectedMonth)}
           </div>
           <div className="flex items-center gap-6">
             <div>

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Check, Lock, Calendar, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { useRental } from '../context/RentalContext';
 import { Badge } from '../components/common/Badge';
+import { formatMonthYear } from '../utils/format';
 
 export const SettingsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -156,7 +157,7 @@ export const SettingsPage: React.FC = () => {
               <span>Generate monthly charges</span>
             </button>
             <p className="text-[11px] text-gray-400 mt-1.5 text-center">
-              October: 5 charges already generated. No duplicates will be created.
+              {formatMonthYear(selectedMonth)}: charges up to date. No duplicates will be created.
             </p>
           </div>
         </div>
