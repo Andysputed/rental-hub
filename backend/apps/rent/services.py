@@ -2,6 +2,7 @@ from datetime import date
 from decimal import Decimal
 import calendar
 from django.db import transaction
+from django.db.models import Q
 from apps.properties.models import Property
 from apps.tenants.models import Tenancy
 from .models import RentCharge
@@ -19,10 +20,16 @@ def generate_monthly_charges(month: str, property_obj: Property = None):
 
     year_str, month_str = month.split('-')
     year, month_num = int(year_str), int(month_str)
+    month_start = date(year, month_num, 1)
+    max_days = calendar.monthrange(year, month_num)[1]
+    month_end = date(year, month_num, max_days)
 
     active_tenancies = Tenancy.objects.filter(
         room__property=property_obj,
-        status='active'
+        status='active',
+        start_date__lte=month_end,
+    ).filter(
+        Q(end_date__isnull=True) | Q(end_date__gte=month_start)
     ).select_related('room', 'tenant')
 
     created_count = 0

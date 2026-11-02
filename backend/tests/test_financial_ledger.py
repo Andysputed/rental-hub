@@ -211,3 +211,63 @@ class FinancialLedgerTestCase(TestCase):
         month_res = self.client.get('/api/v1/expenses/?month=2026-10')
         self.assertEqual(month_res.status_code, status.HTTP_200_OK)
         self.assertEqual(len(month_res.data), 2)
+
+    def test_payment_month_filtering(self):
+        """Payments can be filtered by month of transaction date."""
+        # Record payment in 2026-10
+        self.client.post('/api/v1/payments/', {
+            'roomId': self.rooms[0].id,
+            'amount': '5000.00',
+            'method': 'mpesa',
+            'reference': 'OCT_PAY_01',
+            'paymentDate': '2026-10-15'
+        }, format='json')
+
+        # Record payment in 2026-11
+        self.client.post('/api/v1/payments/', {
+            'roomId': self.rooms[0].id,
+            'amount': '3000.00',
+            'method': 'cash',
+            'reference': 'NOV_PAY_01',
+            'paymentDate': '2026-11-05'
+        }, format='json')
+
+        # Query 2026-10
+        oct_res = self.client.get('/api/v1/payments/?month=2026-10')
+        self.assertEqual(oct_res.status_code, status.HTTP_200_OK)
+        self.assertTrue(all(p['date'].startswith('2026-10') for p in oct_res.data))
+        self.assertTrue(any(p['reference'] == 'OCT_PAY_01' for p in oct_res.data))
+        self.assertFalse(any(p['reference'] == 'NOV_PAY_01' for p in oct_res.data))
+
+        # Query 2026-11
+        nov_res = self.client.get('/api/v1/payments/?month=2026-11')
+        self.assertEqual(nov_res.status_code, status.HTTP_200_OK)
+        self.assertTrue(all(p['date'].startswith('2026-11') for p in nov_res.data))
+        self.assertTrue(any(p['reference'] == 'NOV_PAY_01' for p in nov_res.data))
+        self.assertFalse(any(p['reference'] == 'OCT_PAY_01' for p in nov_res.data))
+
+    def test_generate_charges_respects_tenancy_dates(self):
+        """Generating charges only generates for active tenancies that started on or before the month."""
+        # Create a future tenancy starting in 2026-12
+        future_tenant = Tenant.objects.create(full_name="Future Tenant", phone="+254 711 999 888")
+        future_tenancy = Tenancy.objects.create(
+            tenant=future_tenant,
+            room=self.rooms[5], # Room 06
+            start_date=date(2026, 12, 1),
+            monthly_rent=Decimal("12000.00"),
+            deposit=Decimal("12000.00"),
+            rent_due_day=5,
+            status='active'
+        )
+
+        # Generate for 2026-11 -> future_tenancy should NOT get a charge
+        res = self.client.post('/api/v1/rent-charges/generate/', {'month': '2026-11'}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        nov_charges = res.data['charges']
+        self.assertFalse(any(c['tenancyId'] == future_tenancy.id for c in nov_charges))
+
+        # Generate for 2026-12 -> future_tenancy SHOULD get a charge
+        res_dec = self.client.post('/api/v1/rent-charges/generate/', {'month': '2026-12'}, format='json')
+        self.assertEqual(res_dec.status_code, status.HTTP_200_OK)
+        dec_charges = res_dec.data['charges']
+        self.assertTrue(any(c['tenancyId'] == future_tenancy.id for c in dec_charges))

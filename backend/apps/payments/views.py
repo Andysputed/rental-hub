@@ -1,3 +1,4 @@
+import re
 from decimal import Decimal
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
@@ -33,6 +34,11 @@ class PaymentViewSet(viewsets.ModelViewSet):
         tenancy_id = self.request.query_params.get('tenancyId')
         if tenancy_id:
             qs = qs.filter(tenancy_id=tenancy_id)
+
+        month = self.request.query_params.get('month')
+        if month and re.match(r'^\d{4}-(0[1-9]|1[0-2])$', month):
+            year, month_num = month.split('-')
+            qs = qs.filter(date__year=int(year), date__month=int(month_num))
 
         search = self.request.query_params.get('search', '').strip()
         if search:
