@@ -12,7 +12,7 @@ from apps.payments.models import Deposit
 class CoreAPIsTestCase(TestCase):
     def setUp(self):
         self.client = APIClient()
-        self.user = User.objects.create_user(username='testlandlord', password='testpass123')
+        self.user = User.objects.create_superuser(username='testlandlord', email='test@example.com', password='testpass123')
         self.client.force_authenticate(user=self.user)
         self.property = Property.objects.create(
             id=1,
@@ -43,7 +43,7 @@ class CoreAPIsTestCase(TestCase):
         """Room register returns all 6 rooms and supports status filtering."""
         response = self.client.get('/api/v1/rooms/')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 6)
+        self.assertEqual(len(response.data['results']), 6)
 
         # Mark Room 01 occupied
         tenant = Tenant.objects.create(full_name="Amina Hassan", phone="+254 7XX XXX 101")
@@ -60,14 +60,14 @@ class CoreAPIsTestCase(TestCase):
         # Test filter ?status=occupied
         resp_occ = self.client.get('/api/v1/rooms/?status=occupied')
         self.assertEqual(resp_occ.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(resp_occ.data), 1)
-        self.assertEqual(resp_occ.data[0]['number'], '01')
-        self.assertEqual(resp_occ.data[0]['currentTenancy']['tenantName'], 'Amina Hassan')
+        self.assertEqual(len(resp_occ.data['results']), 1)
+        self.assertEqual(resp_occ.data['results'][0]['number'], '01')
+        self.assertEqual(resp_occ.data['results'][0]['currentTenancy']['tenantName'], 'Amina Hassan')
 
         # Test filter ?status=vacant
         resp_vac = self.client.get('/api/v1/rooms/?status=vacant')
         self.assertEqual(resp_vac.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(resp_vac.data), 5)
+        self.assertEqual(len(resp_vac.data['results']), 5)
 
     def test_get_and_patch_settings(self):
         """Settings endpoint returns defaults and allows authorized partial updates."""

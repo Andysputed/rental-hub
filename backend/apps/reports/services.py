@@ -1,6 +1,8 @@
 from decimal import Decimal
 from datetime import date
 from django.utils import timezone
+from django.db.models import Sum
+from django.conf import settings as django_settings
 from apps.properties.models import Property, Room
 from apps.tenants.models import Tenancy
 from apps.rent.models import RentCharge
@@ -14,7 +16,7 @@ def get_dashboard_metrics(month: str, property_obj: Property = None):
     Reconciles directly against recorded database ledgers.
     """
     if not property_obj:
-        property_obj = Property.objects.first()
+        property_obj = Property.objects.filter(pk=django_settings.RENTALHUB_PROPERTY_ID).first()
 
     today = timezone.now().date()
     year_str, month_str = month.split('-')
@@ -46,7 +48,9 @@ def get_dashboard_metrics(month: str, property_obj: Property = None):
     ).select_related('room', 'tenancy__tenant')
 
     total_rent_charged = sum((c.amount for c in charges), Decimal('0.00'))
-    total_rent_received = sum((c.paid_amount for c in charges), Decimal('0.00'))
+    total_rent_received = Payment.objects.filter(
+        room__property=property_obj, date__year=year, date__month=month_num
+    ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
     total_outstanding = sum((c.balance for c in charges), Decimal('0.00'))
     current_tenants_outstanding = sum(
         (c.balance for c in charges if c.tenancy.status == 'active'), Decimal('0.00')
@@ -143,7 +147,7 @@ def get_monthly_financial_report(month: str, property_obj: Property = None):
     Reconciles cash received against operational expenses and ledger balances.
     """
     if not property_obj:
-        property_obj = Property.objects.first()
+        property_obj = Property.objects.filter(pk=django_settings.RENTALHUB_PROPERTY_ID).first()
 
     today = timezone.now().date()
     year_str, month_str = month.split('-')
@@ -163,7 +167,9 @@ def get_monthly_financial_report(month: str, property_obj: Property = None):
     ).select_related('room', 'tenancy__tenant')
 
     rent_charged = sum((c.amount for c in charges), Decimal('0.00'))
-    rent_received = sum((c.paid_amount for c in charges), Decimal('0.00'))
+    rent_received = Payment.objects.filter(
+        room__property=property_obj, date__year=year, date__month=month_num
+    ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
     outstanding_rent = sum((c.balance for c in charges), Decimal('0.00'))
     current_tenants_outstanding = sum(
         (c.balance for c in charges if c.tenancy.status == 'active'), Decimal('0.00')

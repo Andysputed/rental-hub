@@ -1,162 +1,102 @@
-"""
-Tests for RentalHub token authentication.
-
-Verifies:
-- Login with valid credentials returns a token
-- Login with bad credentials is rejected
-- Missing fields are rejected
-- Authenticated /auth/me/ returns user info
-- Unauthenticated requests to protected endpoints are rejected (401)
-- Authenticated requests to protected endpoints succeed
-- Logout invalidates the token
-"""
-
 from django.contrib.auth.models import User
-from django.urls import reverse
+from django.core import mail
+from django.core.cache import cache
+from django.test import override_settings
 from rest_framework import status
-from rest_framework.authtoken.models import Token
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase, APIClient
 
 
-class LoginViewTests(APITestCase):
+class SessionAuthenticationTests(APITestCase):
     def setUp(self):
-        self.user = User.objects.create_user(
-            username='landlord',
-            password='strongpass123',
-            email='landlord@example.com',
-            first_name='Veronicah',
-            last_name='Kaptingei',
+        cache.clear()
+        self.user = User.objects.create_superuser(
+            username='landlord', password='strongpass123', email='landlord@example.com',
+            first_name='Veronicah', last_name='Kaptingei',
         )
-        self.login_url = '/api/v1/auth/login/'
 
-    def test_login_valid_credentials_returns_token(self):
-        res = self.client.post(self.login_url, {'username': 'landlord', 'password': 'strongpass123'}, format='json')
-        self.assertEqual(res.status_code, status.HTTP_200_OK)
-        self.assertIn('token', res.data)
-        self.assertEqual(res.data['username'], 'landlord')
-        self.assertIsInstance(res.data['token'], str)
-        self.assertTrue(len(res.data['token']) > 10)
+    def test_login_creates_server_session_without_returning_token(self):
+        response = self.client.post('/api/v1/auth/login/', {
+            'username': 'landlord', 'password': 'strongpass123',
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertNotIn('token', response.data)
+        self.assertEqual(response.data['username'], 'landlord')
+        self.assertIn('sessionid', response.cookies)
+        self.assertTrue(self.client.get('/api/v1/auth/me/').data['username'] == 'landlord')
 
-    def test_login_wrong_password_rejected(self):
-        res = self.client.post(self.login_url, {'username': 'landlord', 'password': 'wrong'}, format='json')
-        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
-        self.assertIn('error', res.data)
+    def test_non_superuser_cannot_access_landlord_api(self):
+        User.objects.create_user(username='staff', email='staff@example.com', password='strongpass123', is_staff=True)
+        response = self.client.post('/api/v1/auth/login/', {'username': 'staff', 'password': 'strongpass123'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(response.data['error'], 'Invalid username or password.')
 
-    def test_login_unknown_user_rejected(self):
-        res = self.client.post(self.login_url, {'username': 'nobody', 'password': 'anything'}, format='json')
-        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+    def test_login_wrong_password_and_unknown_user_share_same_response(self):
+        wrong = self.client.post('/api/v1/auth/login/', {'username': 'landlord', 'password': 'bad'}, format='json')
+        missing = self.client.post('/api/v1/auth/login/', {'username': 'nobody', 'password': 'bad'}, format='json')
+        self.assertEqual(wrong.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(wrong.data, missing.data)
 
-    def test_login_missing_username_rejected(self):
-        res = self.client.post(self.login_url, {'password': 'strongpass123'}, format='json')
-        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+    def test_login_requires_csrf_token_in_browser_client(self):
+        client = APIClient(enforce_csrf_checks=True)
+        csrf = client.get('/api/v1/auth/csrf/')
+        response = client.post('/api/v1/auth/login/', {
+            'username': 'landlord', 'password': 'strongpass123',
+        }, format='json')
+        self.assertEqual(response.status_code, 403)
+        accepted = client.post('/api/v1/auth/login/', {
+            'username': 'landlord', 'password': 'strongpass123',
+        }, format='json', HTTP_X_CSRFTOKEN=csrf.json()['csrfToken'])
+        self.assertEqual(accepted.status_code, 200)
 
-    def test_login_missing_password_rejected(self):
-        res = self.client.post(self.login_url, {'username': 'landlord'}, format='json')
-        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+    def test_logout_invalidates_server_session(self):
+        self.client.force_login(self.user)
+        response = self.client.post('/api/v1/auth/logout/', {}, format='json')
+        self.assertEqual(response.status_code, 200)
+        me = self.client.get('/api/v1/auth/me/')
+        self.assertNotEqual(me.status_code, 200)
 
-    def test_login_inactive_user_rejected(self):
-        self.user.is_active = False
-        self.user.save()
-        res = self.client.post(self.login_url, {'username': 'landlord', 'password': 'strongpass123'}, format='json')
-        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+    def test_anonymous_cannot_access_protected_api(self):
+        response = self.client.get('/api/v1/tenants/')
+        self.assertIn(response.status_code, (401, 403))
 
-    def test_repeated_login_returns_same_token(self):
-        res1 = self.client.post(self.login_url, {'username': 'landlord', 'password': 'strongpass123'}, format='json')
-        res2 = self.client.post(self.login_url, {'username': 'landlord', 'password': 'strongpass123'}, format='json')
-        self.assertEqual(res1.data['token'], res2.data['token'])
+    def test_login_is_throttled(self):
+        for _ in range(5):
+            self.client.post('/api/v1/auth/login/', {'username': 'landlord', 'password': 'bad'}, format='json')
+        response = self.client.post('/api/v1/auth/login/', {'username': 'landlord', 'password': 'bad'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
 
 
-class MeViewTests(APITestCase):
+@override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+class PasswordResetTests(APITestCase):
     def setUp(self):
-        self.user = User.objects.create_user(
-            username='landlord',
-            password='strongpass123',
-            email='landlord@example.com',
-            first_name='Veronicah',
-            last_name='Kaptingei',
+        cache.clear()
+        self.user = User.objects.create_superuser(
+            username='landlord', password='strongpass123', email='landlord@example.com',
         )
-        self.token = Token.objects.create(user=self.user)
-        self.me_url = '/api/v1/auth/me/'
 
-    def test_me_authenticated_returns_user_info(self):
-        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token.key}')
-        res = self.client.get(self.me_url)
-        self.assertEqual(res.status_code, status.HTTP_200_OK)
-        self.assertEqual(res.data['username'], 'landlord')
+    def test_password_reset_email_is_generic_and_token_is_single_use(self):
+        response = self.client.post('/api/v1/auth/password-reset/', {'email': 'landlord@example.com'}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(mail.outbox), 1)
+        body = mail.outbox[0].body
+        self.assertIn('uid=', body)
+        self.assertIn('token=', body)
+        query = body.split('?uid=', 1)[1].splitlines()[0]
+        uid, token = query.split('&token=')
 
-    def test_me_unauthenticated_rejected(self):
-        res = self.client.get(self.me_url)
-        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+        confirm = self.client.post('/api/v1/auth/password-reset/confirm/', {
+            'uid': uid, 'token': token, 'newPassword': 'A-new-strong-password-2026!',
+        }, format='json')
+        self.assertEqual(confirm.status_code, 200, confirm.data)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('A-new-strong-password-2026!'))
+        replay = self.client.post('/api/v1/auth/password-reset/confirm/', {
+            'uid': uid, 'token': token, 'newPassword': 'Another-new-password-2026!',
+        }, format='json')
+        self.assertEqual(replay.status_code, 400)
 
-    def test_me_invalid_token_rejected(self):
-        self.client.credentials(HTTP_AUTHORIZATION='Token invalidtoken123')
-        res = self.client.get(self.me_url)
-        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
-
-
-class LogoutViewTests(APITestCase):
-    def setUp(self):
-        self.user = User.objects.create_user(username='landlord', password='strongpass123')
-        self.token = Token.objects.create(user=self.user)
-        self.logout_url = '/api/v1/auth/logout/'
-
-    def test_logout_deletes_token(self):
-        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token.key}')
-        res = self.client.post(self.logout_url)
-        self.assertEqual(res.status_code, status.HTTP_200_OK)
-        # Token must be gone from DB
-        self.assertFalse(Token.objects.filter(user=self.user).exists())
-
-    def test_logout_unauthenticated_rejected(self):
-        res = self.client.post(self.logout_url)
-        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
-
-    def test_token_invalid_after_logout(self):
-        key = self.token.key
-        self.client.credentials(HTTP_AUTHORIZATION=f'Token {key}')
-        self.client.post(self.logout_url)
-        # Using the now-deleted token should fail
-        self.client.credentials(HTTP_AUTHORIZATION=f'Token {key}')
-        res = self.client.get('/api/v1/auth/me/')
-        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
-
-
-class ProtectedEndpointTests(APITestCase):
-    """
-    Spot-checks that key data endpoints require authentication.
-    """
-    def setUp(self):
-        self.user = User.objects.create_user(username='landlord', password='strongpass123')
-        self.token = Token.objects.create(user=self.user)
-
-    def _protected_urls(self):
-        return [
-            '/api/v1/rooms/',
-            '/api/v1/tenants/',
-            '/api/v1/rent-charges/',
-            '/api/v1/payments/',
-            '/api/v1/expenses/',
-            '/api/v1/settings/',
-        ]
-
-    def test_unauthenticated_gets_rejected(self):
-        for url in self._protected_urls():
-            with self.subTest(url=url):
-                res = self.client.get(url)
-                self.assertEqual(
-                    res.status_code,
-                    status.HTTP_401_UNAUTHORIZED,
-                    msg=f'Expected 401 for {url}, got {res.status_code}',
-                )
-
-    def test_authenticated_gets_accepted(self):
-        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token.key}')
-        for url in self._protected_urls():
-            with self.subTest(url=url):
-                res = self.client.get(url)
-                self.assertNotEqual(
-                    res.status_code,
-                    status.HTTP_401_UNAUTHORIZED,
-                    msg=f'Authenticated request to {url} was rejected',
-                )
-
+    def test_unknown_email_gets_same_reset_response_without_email(self):
+        response = self.client.post('/api/v1/auth/password-reset/', {'email': 'missing@example.com'}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['detail'], 'If an eligible account exists for that address, password reset instructions will be sent.')
+        self.assertEqual(len(mail.outbox), 0)

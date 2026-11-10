@@ -1,52 +1,23 @@
-from decimal import Decimal
-from rest_framework import viewsets, status
+from rest_framework import mixins, viewsets, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.db import transaction
+from django.conf import settings as django_settings
 from .models import Property, PropertySettings, Room
-from .serializers import PropertySerializer, PropertySettingsSerializer, RoomSerializer
+from .serializers import PropertySettingsSerializer, PropertySettingsUpdateSerializer, RoomSerializer
 
 
-def get_or_create_default_property():
-    """Ensure a default Property with 6 rooms and settings exists."""
-    prop, _ = Property.objects.get_or_create(
-        id=1,
-        defaults={
-            'name': 'Acacia House',
-            'location': 'Nairobi · 6 rooms',
-            'currency': 'KES',
-        }
-    )
-    PropertySettings.objects.get_or_create(
-        property=prop,
-        defaults={
-            'landlord_name': 'Veronicah K.',
-            'landlord_initials': 'VK',
-            'default_due_day': 5,
-            'auto_generate_charges': True,
-        }
-    )
-    # Ensure standard 6 rooms exist
-    for i in range(1, 7):
-        num_str = f"{i:02d}"
-        Room.objects.get_or_create(
-            property=prop,
-            number=num_str,
-            defaults={
-                'name': f"Room {num_str}",
-                'default_rent': Decimal('10000.00'),
-                'status': 'vacant',
-            }
-        )
-    return prop
+def get_default_property():
+    """Read the explicitly configured property without mutating data on GET."""
+    return Property.objects.filter(pk=django_settings.RENTALHUB_PROPERTY_ID).first()
 
 
-class RoomViewSet(viewsets.ModelViewSet):
+class RoomViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
     serializer_class = RoomSerializer
 
     def get_queryset(self):
-        get_or_create_default_property()
         qs = Room.objects.all().select_related('property').prefetch_related('tenancies__tenant')
+        qs = qs.filter(property_id=django_settings.RENTALHUB_PROPERTY_ID)
         status_param = self.request.query_params.get('status')
         if status_param in ('occupied', 'vacant'):
             qs = qs.filter(status=status_param)
@@ -54,66 +25,65 @@ class RoomViewSet(viewsets.ModelViewSet):
 
 
 class PropertySettingsView(APIView):
+    @staticmethod
+    def _response(prop, settings, response_status=status.HTTP_200_OK):
+        data = PropertySettingsSerializer(settings).data
+        data.update({
+            'propertyName': prop.name,
+            'location': prop.location,
+            'currency': prop.currency,
+            'landlordName': settings.landlord_name,
+            'landlordInitials': settings.landlord_initials,
+            'landlordPhone': settings.landlord_phone,
+            'landlordEmail': settings.landlord_email,
+            'defaultDueDay': settings.default_due_day,
+            'autoGenerateCharges': settings.auto_generate_charges,
+        })
+        return Response(data, status=response_status)
+
     def get(self, request):
-        prop = get_or_create_default_property()
-        settings = prop.settings
-        serializer = PropertySettingsSerializer(settings)
-        data = serializer.data
-        data['propertyName'] = prop.name
-        data['location'] = prop.location
-        data['currency'] = prop.currency
-        data['landlordName'] = settings.landlord_name
-        data['landlordInitials'] = settings.landlord_initials
-        data['landlordPhone'] = settings.landlord_phone
-        data['landlordEmail'] = settings.landlord_email
-        data['defaultDueDay'] = settings.default_due_day
-        data['autoGenerateCharges'] = settings.auto_generate_charges
-        return Response(data)
+        prop = get_default_property()
+        if not prop:
+            return Response({"detail": "Configured property is not initialized."}, status=status.HTTP_404_NOT_FOUND)
+        return self._response(prop, prop.settings)
 
     def patch(self, request):
-        prop = get_or_create_default_property()
-        settings = prop.settings
+        prop_id = django_settings.RENTALHUB_PROPERTY_ID
+        if not Property.objects.filter(pk=prop_id).exists():
+            return Response({"detail": "Configured property is not initialized."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = PropertySettingsUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        updates = serializer.validated_data
+        room_rents = updates.pop('roomRents', {})
+        available_rooms = {
+            room.number: room.id
+            for room in Room.objects.filter(property_id=prop_id).only('id', 'number')
+        }
+        unknown_rooms = set(room_rents) - set(available_rooms)
+        if unknown_rooms:
+            return Response({"roomRents": f"Unknown room number(s): {', '.join(sorted(unknown_rooms))}."}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
-            if 'propertyName' in request.data:
-                prop.name = request.data['propertyName']
-            if 'location' in request.data:
-                prop.location = request.data['location']
-            if 'currency' in request.data:
-                prop.currency = request.data['currency']
-            prop.save()
+            prop = Property.objects.select_for_update().get(pk=prop_id)
+            settings = PropertySettings.objects.select_for_update().get(property=prop)
+            property_fields = {'propertyName': 'name', 'location': 'location', 'currency': 'currency'}
+            settings_fields = {
+                'landlordName': 'landlord_name', 'landlordInitials': 'landlord_initials',
+                'landlordPhone': 'landlord_phone', 'landlordEmail': 'landlord_email',
+                'defaultDueDay': 'default_due_day', 'autoGenerateCharges': 'auto_generate_charges',
+            }
+            for api_name, model_name in property_fields.items():
+                if api_name in updates:
+                    setattr(prop, model_name, updates[api_name])
+            if any(key in updates for key in property_fields):
+                prop.save()
+            for api_name, model_name in settings_fields.items():
+                if api_name in updates:
+                    setattr(settings, model_name, updates[api_name])
+            if any(key in updates for key in settings_fields):
+                settings.save()
+            for room_num, rent in room_rents.items():
+                Room.objects.filter(property_id=prop_id, number=room_num).update(default_rent=rent)
 
-            if 'landlordName' in request.data:
-                settings.landlord_name = request.data['landlordName']
-            if 'landlordInitials' in request.data:
-                settings.landlord_initials = request.data['landlordInitials']
-            if 'landlordPhone' in request.data:
-                settings.landlord_phone = request.data['landlordPhone']
-            if 'landlordEmail' in request.data:
-                settings.landlord_email = request.data['landlordEmail']
-            if 'defaultDueDay' in request.data:
-                settings.default_due_day = int(request.data['defaultDueDay'])
-            if 'autoGenerateCharges' in request.data:
-                settings.auto_generate_charges = bool(request.data['autoGenerateCharges'])
-            settings.save()
-
-            # Update individual room default rents if roomRents provided: {"01": 10000, ...}
-            room_rents = request.data.get('roomRents', {})
-            if isinstance(room_rents, dict):
-                for room_num, rent_val in room_rents.items():
-                    Room.objects.filter(property=prop, number=str(room_num).zfill(2)).update(
-                        default_rent=Decimal(str(rent_val))
-                    )
-
-        serializer = PropertySettingsSerializer(settings)
-        data = serializer.data
-        data['propertyName'] = prop.name
-        data['location'] = prop.location
-        data['currency'] = prop.currency
-        data['landlordName'] = settings.landlord_name
-        data['landlordInitials'] = settings.landlord_initials
-        data['landlordPhone'] = settings.landlord_phone
-        data['landlordEmail'] = settings.landlord_email
-        data['defaultDueDay'] = settings.default_due_day
-        data['autoGenerateCharges'] = settings.auto_generate_charges
-        return Response(data, status=status.HTTP_200_OK)
+        return self._response(prop, settings)

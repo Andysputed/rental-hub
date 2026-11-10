@@ -14,7 +14,7 @@ from apps.expenses.models import Expense
 class FinancialLedgerTestCase(TestCase):
     def setUp(self):
         self.client = APIClient()
-        self.user = User.objects.create_user(username='testlandlord', password='testpass123')
+        self.user = User.objects.create_superuser(username='testlandlord', email='test@example.com', password='testpass123')
         self.client.force_authenticate(user=self.user)
         self.property = Property.objects.create(
             id=1,
@@ -204,13 +204,13 @@ class FinancialLedgerTestCase(TestCase):
         # Filter by category
         cat_res = self.client.get('/api/v1/expenses/?category=cleaning')
         self.assertEqual(cat_res.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(cat_res.data), 1)
-        self.assertEqual(cat_res.data[0]['title'], 'Compound Cleaning')
+        self.assertEqual(len(cat_res.data['results']), 1)
+        self.assertEqual(cat_res.data['results'][0]['title'], 'Compound Cleaning')
 
         # Filter by month
         month_res = self.client.get('/api/v1/expenses/?month=2026-10')
         self.assertEqual(month_res.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(month_res.data), 2)
+        self.assertEqual(len(month_res.data['results']), 2)
 
     def test_payment_month_filtering(self):
         """Payments can be filtered by month of transaction date."""
@@ -235,16 +235,18 @@ class FinancialLedgerTestCase(TestCase):
         # Query 2026-10
         oct_res = self.client.get('/api/v1/payments/?month=2026-10')
         self.assertEqual(oct_res.status_code, status.HTTP_200_OK)
-        self.assertTrue(all(p['date'].startswith('2026-10') for p in oct_res.data))
-        self.assertTrue(any(p['reference'] == 'OCT_PAY_01' for p in oct_res.data))
-        self.assertFalse(any(p['reference'] == 'NOV_PAY_01' for p in oct_res.data))
+        oct_payments = oct_res.data['results']
+        self.assertTrue(all(p['date'].startswith('2026-10') for p in oct_payments))
+        self.assertTrue(any(p['reference'] == 'OCT_PAY_01' for p in oct_payments))
+        self.assertFalse(any(p['reference'] == 'NOV_PAY_01' for p in oct_payments))
 
         # Query 2026-11
         nov_res = self.client.get('/api/v1/payments/?month=2026-11')
         self.assertEqual(nov_res.status_code, status.HTTP_200_OK)
-        self.assertTrue(all(p['date'].startswith('2026-11') for p in nov_res.data))
-        self.assertTrue(any(p['reference'] == 'NOV_PAY_01' for p in nov_res.data))
-        self.assertFalse(any(p['reference'] == 'OCT_PAY_01' for p in nov_res.data))
+        nov_payments = nov_res.data['results']
+        self.assertTrue(all(p['date'].startswith('2026-11') for p in nov_payments))
+        self.assertTrue(any(p['reference'] == 'NOV_PAY_01' for p in nov_payments))
+        self.assertFalse(any(p['reference'] == 'OCT_PAY_01' for p in nov_payments))
 
     def test_generate_charges_respects_tenancy_dates(self):
         """Generating charges only generates for active tenancies that started on or before the month."""

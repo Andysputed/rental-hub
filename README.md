@@ -19,7 +19,7 @@ Rental-Hub/
 │   │   ├── payments/         # Payment, PaymentAllocation, Deposit ledger
 │   │   ├── expenses/         # Expense tracking & categories
 │   │   └── reports/          # Cash-basis reports & Dashboard metrics
-│   ├── tests/                # Automated test suite (24 unit & integration tests)
+│   ├── tests/                # Automated test suite (61 unit & integration tests)
 │   ├── requirements.txt      # Python dependencies
 │   ├── .env.example          # Backend environment template
 │   └── manage.py
@@ -85,12 +85,18 @@ Rental-Hub/
    python manage.py migrate
    ```
 
-5. (Optional) Populate seed development data (6 rooms, 5 active tenants, October charges, payments):
+5. Create the landlord administrator account:
+   ```powershell
+   python manage.py setup_landlord
+   ```
+   *Or supply credentials non-interactively via `--username`, `--password`, and `--noinput`.*
+
+6. (Optional) Populate seed development data (6 rooms, 5 active tenants, October charges, payments):
    ```powershell
    python manage.py seed_dev_data
    ```
 
-6. Start the API server:
+7. Start the API server:
    ```powershell
    python manage.py runserver 0.0.0.0:8000
    ```
@@ -158,12 +164,12 @@ To point the backend to a live PostgreSQL 16 database:
 ## 🧪 Testing & Verification
 
 ### Running Backend Tests
-Execute the comprehensive test suite covering models, database constraints, financial allocations, idempotency, and reporting:
+Execute the comprehensive test suite covering models, database constraints, financial allocations, idempotency, deposit settlement, token authentication, and reporting:
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe manage.py test tests
 ```
-*Expected: 24 tests passing in < 1 second.*
+*Expected: 61 tests passing.*
 
 ### Running Frontend Production Build
 Validate TypeScript types and asset bundles:
@@ -179,17 +185,23 @@ npm run build
 
 | Endpoint | Method | Description |
 | :--- | :--- | :--- |
+| `/auth/login/` | `POST` | Authenticate landlord credentials and receive DRF auth token |
+| `/auth/logout/` | `POST` | Invalidate current user token |
+| `/auth/me/` | `GET` | Validate token and retrieve landlord profile |
 | `/rooms/` | `GET`, `POST` | List all 6 rooms with current tenancy and occupancy status |
 | `/rooms/{id}/` | `GET`, `PATCH` | Retrieve or update room details |
-| `/settings/` | `GET`, `PATCH` | Retrieve or update property-wide settings (due day, default rent) |
+| `/settings/` | `GET`, `PATCH` | Retrieve or update property-wide settings (due day, landlord contact, default rent) |
 | `/tenants/` | `GET`, `POST` | List and search tenant directory |
 | `/tenancies/register/` | `POST` | Register a new tenant, assign a vacant room, record deposit |
 | `/tenancies/{id}/move-out/` | `POST` | Record tenant move-out while preserving financial history |
+| `/tenancies/{id}/settlement-summary/` | `GET` | Retrieve real-time deposit and eligible rent arrears for move-out |
+| `/tenancies/{id}/settle-deposit/` | `POST` | Execute atomic move-out, rent arrears clearance, itemized deductions & refund |
 | `/rent-charges/` | `GET` | List rent charges filtered by month/tenancy |
 | `/rent-charges/generate/` | `POST` | Generate monthly charges (idempotent, skips vacant rooms) |
 | `/payments/` | `GET`, `POST` | Record payments with allocations and auto-generated receipt number |
 | `/payments/{id}/receipt/` | `GET` | Detailed receipt printable view data |
 | `/expenses/` | `GET`, `POST` | Track operational expenses (maintenance, utilities, cleaning) |
-| `/deposits/` | `GET` | Segregated security deposit ledger |
+| `/deposits/` | `GET` | Segregated security deposit ledger with search & status filters |
+| `/deposits/{id}/settle/` | `POST` | Settle deposit directly with itemized deductions & refund details |
 | `/dashboard/metrics/` | `GET` | Aggregated dashboard KPI cards & arrears |
 | `/reports/monthly/` | `GET` | Cash-basis income statement & rent collection breakdown |

@@ -1,4 +1,5 @@
 from django.db import models
+from decimal import Decimal
 from apps.properties.models import Property
 
 
@@ -28,6 +29,7 @@ class Expense(models.Model):
 
     class Meta:
         ordering = ['-date', '-created_at']
+        constraints = [models.CheckConstraint(condition=models.Q(amount__gt=Decimal('0.00')), name='expense_amount_positive')]
 
     def __str__(self):
         return f"{self.title} ({self.amount} KES - {self.get_category_display()})"

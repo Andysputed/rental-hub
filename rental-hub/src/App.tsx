@@ -18,9 +18,10 @@ import { ReportsPage } from './pages/ReportsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { DepositsPage } from './pages/DepositsPage';
 import { Home } from 'lucide-react';
+import { PasswordResetPage } from './pages/PasswordResetPage';
 
 /**
- * Shows a full-screen spinner while the auth context validates any stored token.
+ * Shows a full-screen spinner while the auth context restores the server session.
  */
 function AuthLoadingScreen() {
   return (
@@ -41,7 +42,7 @@ function AuthLoadingScreen() {
 
 /**
  * Wraps protected routes. Redirects unauthenticated users to /login.
- * Shows a loading screen while the stored token is being validated.
+ * Shows a loading screen while the server session is being restored.
  */
 function ProtectedRoutes() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -63,6 +64,8 @@ function App() {
         <Routes>
           {/* Public: login */}
           <Route path="/login" element={<LoginRedirect />} />
+          <Route path="/password-reset" element={<PasswordResetPage />} />
+          <Route path="/password-reset/confirm" element={<PasswordResetPage />} />
 
           {/* Protected: all app routes under AppShell */}
           <Route path="/" element={<ProtectedRoutes />}>

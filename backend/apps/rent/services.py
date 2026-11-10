@@ -3,6 +3,7 @@ from decimal import Decimal
 import calendar
 from django.db import transaction
 from django.db.models import Q
+from django.conf import settings as django_settings
 from apps.properties.models import Property
 from apps.tenants.models import Tenancy
 from .models import RentCharge
@@ -16,7 +17,7 @@ def generate_monthly_charges(month: str, property_obj: Property = None):
     Returns (created_count, skipped_count, total_amount).
     """
     if not property_obj:
-        property_obj = Property.objects.first()
+        property_obj = Property.objects.filter(pk=django_settings.RENTALHUB_PROPERTY_ID).first()
 
     year_str, month_str = month.split('-')
     year, month_num = int(year_str), int(month_str)
@@ -38,11 +39,6 @@ def generate_monthly_charges(month: str, property_obj: Property = None):
 
     with transaction.atomic():
         for tenancy in active_tenancies:
-            # Check if charge already exists for this tenancy and month
-            if RentCharge.objects.filter(tenancy=tenancy, month=month).exists():
-                skipped_count += 1
-                continue
-
             # Calculate due date: clamp due day to days in month
             max_days = calendar.monthrange(year, month_num)[1]
             due_day = min(tenancy.rent_due_day, max_days)
@@ -51,15 +47,20 @@ def generate_monthly_charges(month: str, property_obj: Property = None):
             # Use agreed tenancy rent
             charge_amount = tenancy.monthly_rent
 
-            charge = RentCharge.objects.create(
+            charge, was_created = RentCharge.objects.get_or_create(
                 tenancy=tenancy,
-                room=tenancy.room,
                 month=month,
-                due_date=due_date,
-                amount=charge_amount,
-                paid_amount=Decimal('0.00'),
-                status='unpaid'
+                defaults={
+                    'room': tenancy.room,
+                    'due_date': due_date,
+                    'amount': charge_amount,
+                    'paid_amount': Decimal('0.00'),
+                    'status': 'unpaid',
+                },
             )
+            if not was_created:
+                skipped_count += 1
+                continue
             charge.update_status()
             charge.save()
 

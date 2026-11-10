@@ -19,6 +19,7 @@ class Tenant(models.Model):
 
     class Meta:
         ordering = ['full_name']
+        constraints = [models.UniqueConstraint(fields=['phone'], name='unique_tenant_phone')]
 
     def __str__(self):
         return f"{self.full_name} ({self.phone})"
@@ -59,7 +60,15 @@ class Tenancy(models.Model):
                 fields=['room'],
                 condition=models.Q(status='active'),
                 name='unique_active_tenancy_per_room'
-            )
+            ),
+            models.UniqueConstraint(
+                fields=['tenant'],
+                condition=models.Q(status='active'),
+                name='unique_active_tenancy_per_tenant'
+            ),
+            models.CheckConstraint(condition=models.Q(monthly_rent__gt=Decimal('0.00')), name='tenancy_monthly_rent_positive'),
+            models.CheckConstraint(condition=models.Q(deposit__gte=Decimal('0.00')), name='tenancy_deposit_nonnegative'),
+            models.CheckConstraint(condition=models.Q(rent_due_day__gte=1, rent_due_day__lte=28), name='tenancy_due_day_between_1_28'),
         ]
 
     def __str__(self):

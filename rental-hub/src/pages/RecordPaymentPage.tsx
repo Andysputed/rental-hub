@@ -16,6 +16,7 @@ export const RecordPaymentPage: React.FC = () => {
   const [reference, setReference] = useState<string>('');
   const [paymentDate, setPaymentDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   // Synchronize room selection when rooms or query params are available
   useEffect(() => {
@@ -83,6 +84,7 @@ export const RecordPaymentPage: React.FC = () => {
       return;
     }
 
+    setIsSubmitting(true);
     try {
       const newPayment = await recordPayment({
         tenantId: selectedTenant.id,
@@ -98,6 +100,8 @@ export const RecordPaymentPage: React.FC = () => {
       navigate(`/payments/receipt/${newPayment.id}`);
     } catch (err: any) {
       setError(err?.message || 'Failed to record payment');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -339,10 +343,13 @@ export const RecordPaymentPage: React.FC = () => {
         <div className="space-y-3 pt-2">
           <button
             type="submit"
-            className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-brand-700 hover:bg-[#0D3F34] text-white font-semibold text-sm shadow-2xs transition-colors cursor-pointer"
+            disabled={isSubmitting}
+            className={`w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-brand-700 hover:bg-[#0D3F34] text-white font-semibold text-sm shadow-2xs transition-colors ${
+              isSubmitting ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'
+            }`}
           >
             <Check size={18} />
-            <span>Save payment & view receipt</span>
+            <span>{isSubmitting ? 'Recording payment...' : 'Save payment & view receipt'}</span>
           </button>
 
           <button
@@ -352,10 +359,6 @@ export const RecordPaymentPage: React.FC = () => {
           >
             Cancel
           </button>
-
-          <p className="text-[11px] text-gray-400 text-center">
-            Receipt RH-2026-003 for this example
-          </p>
         </div>
       </form>
     </div>

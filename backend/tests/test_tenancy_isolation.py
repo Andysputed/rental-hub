@@ -16,7 +16,7 @@ from apps.reports.services import get_dashboard_metrics, get_monthly_financial_r
 class TenancyHistoricalIsolationTests(TestCase):
     def setUp(self):
         self.client = APIClient()
-        self.user = User.objects.create_user(username='testlandlord', password='testpass123')
+        self.user = User.objects.create_superuser(username='testlandlord', email='test@example.com', password='testpass123')
         self.client.force_authenticate(user=self.user)
         self.property = Property.objects.create(
             name="Acacia House",
@@ -183,25 +183,25 @@ class TenancyHistoricalIsolationTests(TestCase):
         # Payments queried by tenancyId
         payments_res_b = self.client.get(f"/api/v1/payments/?tenancyId={tenancy_b.id}")
         self.assertEqual(payments_res_b.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(payments_res_b.data), 0)
+        self.assertEqual(len(payments_res_b.data['results']), 0)
 
         deposits_res_b = self.client.get(f"/api/v1/deposits/?tenancyId={tenancy_b.id}")
         self.assertEqual(deposits_res_b.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(deposits_res_b.data), 1)
-        self.assertEqual(Decimal(str(deposits_res_b.data[0]["amount"])), Decimal("10500.00"))
-        self.assertEqual(deposits_res_b.data[0]["tenantName"], "Brian Kipchumba")
+        self.assertEqual(len(deposits_res_b.data['results']), 1)
+        self.assertEqual(Decimal(str(deposits_res_b.data['results'][0]["amount"])), Decimal("10500.00"))
+        self.assertEqual(deposits_res_b.data['results'][0]["tenantName"], "Brian Kipchumba")
 
         # Step 9: Tenant A's historical balances and records remain accessible
         a_charges_res = self.client.get(f"/api/v1/rent-charges/?tenancyId={self.tenancy_a.id}")
         self.assertEqual(a_charges_res.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(a_charges_res.data), 1)
-        self.assertEqual(a_charges_res.data[0]["month"], "2026-10")
-        self.assertEqual(float(a_charges_res.data[0]["balance"]), 2500.0)
+        self.assertEqual(len(a_charges_res.data['results']), 1)
+        self.assertEqual(a_charges_res.data['results'][0]["month"], "2026-10")
+        self.assertEqual(float(a_charges_res.data['results'][0]["balance"]), 2500.0)
 
         a_payments_res = self.client.get(f"/api/v1/payments/?tenancyId={self.tenancy_a.id}")
         self.assertEqual(a_payments_res.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(a_payments_res.data), 1)
-        self.assertEqual(a_payments_res.data[0]["receiptNumber"], "RH-2026-003")
+        self.assertEqual(len(a_payments_res.data['results']), 1)
+        self.assertEqual(a_payments_res.data['results'][0]["receiptNumber"], "RH-2026-003")
 
         # Step 10: Dashboard metrics distinguish current occupancy from historical debt
         metrics = get_dashboard_metrics(month="2026-10", property_obj=self.property)

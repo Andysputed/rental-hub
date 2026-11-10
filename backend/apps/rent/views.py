@@ -1,16 +1,17 @@
-from rest_framework import viewsets, status
+from rest_framework import mixins, viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.conf import settings as django_settings
 from .models import RentCharge
 from .serializers import RentChargeSerializer, GenerateChargesRequestSerializer
 from .services import generate_monthly_charges
 
 
-class RentChargeViewSet(viewsets.ModelViewSet):
+class RentChargeViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     serializer_class = RentChargeSerializer
 
     def get_queryset(self):
-        qs = RentCharge.objects.all().select_related('tenancy__tenant', 'room')
+        qs = RentCharge.objects.filter(room__property_id=django_settings.RENTALHUB_PROPERTY_ID).select_related('tenancy__tenant', 'room')
 
         month = self.request.query_params.get('month')
         if month:

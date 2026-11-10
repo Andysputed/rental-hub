@@ -27,6 +27,7 @@ class Payment(models.Model):
 
     class Meta:
         ordering = ['-date', '-created_at']
+        constraints = [models.CheckConstraint(condition=models.Q(amount__gt=0), name='payment_amount_positive')]
 
     def __str__(self):
         return f"{self.receipt_number} - {self.amount} KES ({self.method})"
@@ -40,6 +41,7 @@ class PaymentAllocation(models.Model):
 
     class Meta:
         ordering = ['created_at']
+        constraints = [models.CheckConstraint(condition=models.Q(amount__gt=0), name='allocation_amount_positive')]
 
     def __str__(self):
         return f"Allocated {self.amount} from {self.payment.receipt_number} to {self.charge}"
@@ -76,6 +78,7 @@ class Deposit(models.Model):
 
     class Meta:
         ordering = ['-received_date']
+        constraints = [models.CheckConstraint(condition=models.Q(amount__gt=0), name='deposit_amount_positive')]
 
     def __str__(self):
         return f"Deposit {self.amount} KES ({self.tenant.full_name}) - {self.get_status_display()}"
@@ -87,6 +90,15 @@ class Deposit(models.Model):
     @property
     def refundable_balance(self):
         return max(Decimal('0.00'), self.amount - self.total_deductions)
+
+
+class ReceiptSequence(models.Model):
+    """Transactional yearly receipt counter; the unique year row serializes issuers."""
+    year = models.PositiveSmallIntegerField(unique=True)
+    next_number = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        constraints = [models.CheckConstraint(condition=models.Q(next_number__gte=1), name='receipt_sequence_positive')]
 
 
 class DepositDeduction(models.Model):
@@ -106,6 +118,7 @@ class DepositDeduction(models.Model):
 
     class Meta:
         ordering = ['created_at']
+        constraints = [models.CheckConstraint(condition=models.Q(amount__gt=0), name='deposit_deduction_amount_positive')]
 
     def __str__(self):
         return f"{self.get_deduction_type_display()}: {self.amount} KES ({self.description})"

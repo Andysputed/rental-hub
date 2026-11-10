@@ -7,14 +7,14 @@ from rest_framework import status
 from apps.properties.models import Property, PropertySettings, Room
 from apps.tenants.models import Tenant, Tenancy
 from apps.rent.models import RentCharge
-from apps.payments.models import Payment, PaymentAllocation, Deposit
+from apps.payments.models import Payment, PaymentAllocation, Deposit, DepositDeduction
 from apps.expenses.models import Expense
 
 
 class ReportingAndReconciliationTestCase(TestCase):
     def setUp(self):
         self.client = APIClient()
-        self.user = User.objects.create_user(username='testlandlord', password='testpass123')
+        self.user = User.objects.create_superuser(username='testlandlord', email='test@example.com', password='testpass123')
         self.client.force_authenticate(user=self.user)
         self.property = Property.objects.create(
             id=1,
@@ -212,3 +212,22 @@ class ReportingAndReconciliationTestCase(TestCase):
         res = self.client.get('/api/v1/dashboard/metrics/?month=invalid-date')
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('error', res.data)
+
+    def test_deposit_rent_deduction_reduces_arrears_but_is_not_cash_income(self):
+        charge = self.charges[2]
+        deposit = self.tenancies[2].deposits.first()
+        amount = Decimal('1000.00')
+        charge.paid_amount += amount
+        charge.save(update_fields=['paid_amount'])
+        DepositDeduction.objects.create(
+            deposit=deposit, deduction_type='rent', description='Applied to arrears',
+            amount=amount, charge=charge,
+        )
+
+        dashboard = self.client.get('/api/v1/dashboard/metrics/?month=2026-10').data
+        report = self.client.get('/api/v1/reports/monthly/?month=2026-10').data
+        self.assertEqual(dashboard['totalRentReceived'], 38500.00)
+        self.assertEqual(dashboard['netCashIncome'], 30000.00)
+        self.assertEqual(report['summary']['rentReceived'], 38500.00)
+        self.assertEqual(report['summary']['outstandingRent'], 10500.00)
+        self.assertEqual(report['summary']['netCashIncome'], 30000.00)

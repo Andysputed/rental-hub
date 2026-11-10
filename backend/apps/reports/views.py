@@ -4,6 +4,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.utils import timezone
+from apps.properties.views import get_default_property
 from .services import get_dashboard_metrics, get_monthly_financial_report
 
 
@@ -18,7 +19,10 @@ class DashboardMetricsView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        data = get_dashboard_metrics(month=month)
+        prop = get_default_property()
+        if not prop:
+            return Response({"detail": "Configured property is not initialized."}, status=status.HTTP_404_NOT_FOUND)
+        data = get_dashboard_metrics(month=month, property_obj=prop)
         return Response(data, status=status.HTTP_200_OK)
 
 
@@ -33,5 +37,8 @@ class MonthlyReportView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        data = get_monthly_financial_report(month=month)
+        prop = get_default_property()
+        if not prop:
+            return Response({"detail": "Configured property is not initialized."}, status=status.HTTP_404_NOT_FOUND)
+        data = get_monthly_financial_report(month=month, property_obj=prop)
         return Response(data, status=status.HTTP_200_OK)

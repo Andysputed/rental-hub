@@ -14,7 +14,7 @@ from apps.rent.services import generate_monthly_charges
 class MoveOutApiTests(TestCase):
     def setUp(self):
         self.client = APIClient()
-        self.user = User.objects.create_user(username='testlandlord', password='testpass123')
+        self.user = User.objects.create_superuser(username='testlandlord', email='test@example.com', password='testpass123')
         self.client.force_authenticate(user=self.user)
         self.prop = Property.objects.create(name="Acacia House", currency="KES")
         self.room = Room.objects.create(
@@ -230,6 +230,6 @@ class MoveOutApiTests(TestCase):
         # - API query for new tenancy does NOT return old tenant's charges
         api_res = self.client.get(f"/api/v1/rent-charges/?tenancyId={new_tenancy_id}")
         self.assertEqual(api_res.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(api_res.data), 1)
-        self.assertEqual(api_res.data[0]["month"], "2026-11")
-        self.assertEqual(float(api_res.data[0]["amount"]), 12000.0)
+        self.assertEqual(len(api_res.data['results']), 1)
+        self.assertEqual(api_res.data['results'][0]["month"], "2026-11")
+        self.assertEqual(float(api_res.data['results'][0]["amount"]), 12000.0)

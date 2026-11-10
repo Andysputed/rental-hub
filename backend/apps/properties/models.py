@@ -30,6 +30,10 @@ class PropertySettings(models.Model):
 
     class Meta:
         verbose_name_plural = 'Property Settings'
+        constraints = [models.CheckConstraint(
+            condition=models.Q(default_due_day__gte=1, default_due_day__lte=28),
+            name='property_due_day_between_1_28',
+        )]
 
     def __str__(self):
         return f"Settings for {self.property.name}"
@@ -52,7 +56,8 @@ class Room(models.Model):
     class Meta:
         ordering = ['number']
         constraints = [
-            models.UniqueConstraint(fields=['property', 'number'], name='unique_room_number_per_property')
+            models.UniqueConstraint(fields=['property', 'number'], name='unique_room_number_per_property'),
+            models.CheckConstraint(condition=models.Q(default_rent__gt=0), name='room_default_rent_positive'),
         ]
 
     def __str__(self):

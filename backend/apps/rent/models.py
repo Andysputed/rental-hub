@@ -29,7 +29,9 @@ class RentCharge(models.Model):
             models.UniqueConstraint(
                 fields=['tenancy', 'month'],
                 name='unique_rent_charge_per_tenancy_month'
-            )
+            ),
+            models.CheckConstraint(condition=models.Q(amount__gt=Decimal('0.00')), name='rent_charge_amount_positive'),
+            models.CheckConstraint(condition=models.Q(paid_amount__gte=Decimal('0.00')), name='rent_charge_paid_nonnegative'),
         ]
 
     def __str__(self):

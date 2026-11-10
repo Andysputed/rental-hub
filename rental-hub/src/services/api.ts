@@ -14,7 +14,32 @@ import type {
   SettleDepositPayload,
 } from '../types';
 
-export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace(/\/$/, '');
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:8000/api/v1' : '')).replace(/\/$/, '');
+let csrfToken: string | null = null;
+
+export async function getCsrfToken(forceRefresh = false): Promise<string> {
+  if (csrfToken && !forceRefresh) return csrfToken;
+  const response = await fetch(`${API_BASE_URL}/auth/csrf/`, { credentials: 'include' });
+  if (!response.ok) throw new ApiError('Unable to establish a secure session.', response.status);
+  const data = await response.json();
+  csrfToken = data.csrfToken;
+  return csrfToken as string;
+}
+
+export async function apiFetch(endpoint: string, options: RequestInit = {}): Promise<Response> {
+  const url = endpoint.startsWith('https://') || endpoint.startsWith('http://')
+    ? endpoint
+    : `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+  const headers = new Headers(options.headers || {});
+  const method = (options.method || 'GET').toUpperCase();
+  if (!['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(method)) {
+    headers.set('X-CSRFToken', await getCsrfToken());
+  }
+  if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json');
+  }
+  return fetch(url, { ...options, method, headers, credentials: 'include' });
+}
 
 export class ApiError extends Error {
   public status: number;
@@ -29,23 +54,8 @@ export class ApiError extends Error {
 }
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
-  const headers = new Headers(options.headers || {});
-  if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
-    headers.set('Content-Type', 'application/json');
-  }
-
-  // Attach auth token if available
-  const token = localStorage.getItem('rentalhub_auth_token');
-  if (token && !headers.has('Authorization')) {
-    headers.set('Authorization', `Token ${token}`);
-  }
-
   try {
-    const response = await fetch(url, {
-      ...options,
-      headers,
-    });
+    const response = await apiFetch(endpoint, options);
 
     if (!response.ok) {
       let errorData: any = null;
@@ -90,11 +100,30 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   }
 }
 
+async function requestAll<T>(endpoint: string): Promise<T[]> {
+  const first = await request<any>(endpoint);
+  if (Array.isArray(first)) return first as T[];
+  const items: T[] = [...(Array.isArray(first?.results) ? first.results : [])];
+  let next: string | null = first?.next ?? null;
+  const apiBase = new URL(API_BASE_URL);
+  while (next) {
+    const nextUrl = new URL(next, API_BASE_URL);
+    if (nextUrl.origin !== apiBase.origin || !(nextUrl.pathname === apiBase.pathname || nextUrl.pathname.startsWith(`${apiBase.pathname}/`))) {
+      throw new ApiError('The API returned an invalid pagination link.', 502);
+    }
+    const page = await request<any>(nextUrl.href);
+    if (!page || !Array.isArray(page.results)) throw new ApiError('The API returned an invalid page.', 502);
+    items.push(...page.results);
+    next = page.next ?? null;
+  }
+  return items;
+}
+
 // 1. Rooms API
 export const roomsApi = {
   list: async (status?: 'occupied' | 'vacant'): Promise<Room[]> => {
     const query = status ? `?status=${status}` : '';
-    const rawRooms = await request<any[]>(`/rooms/${query}`);
+    const rawRooms = await requestAll<any>(`/rooms/${query}`);
     return rawRooms.map((r) => ({
       id: String(r.id),
       number: r.number,
@@ -132,7 +161,7 @@ export const tenantsApi = {
     if (search) params.append('search', search);
     if (status) params.append('status', status);
     const qs = params.toString() ? `?${params.toString()}` : '';
-    const raw = await request<any[]>(`/tenants/${qs}`);
+    const raw = await requestAll<any>(`/tenants/${qs}`);
     return raw.map((t) => ({
       id: String(t.id),
       fullName: t.fullName ?? t.full_name,
@@ -165,7 +194,7 @@ export const tenanciesApi = {
     if (params?.tenantId) sp.append('tenantId', String(params.tenantId));
     if (params?.status) sp.append('status', params.status);
     const qs = sp.toString() ? `?${sp.toString()}` : '';
-    const raw = await request<any[]>(`/tenancies/${qs}`);
+    const raw = await requestAll<any>(`/tenancies/${qs}`);
     return raw.map((t) => ({
       id: String(t.id),
       roomId: String(t.roomId),
@@ -251,7 +280,7 @@ export const rentChargesApi = {
     if (params?.tenancyId) sp.append('tenancyId', String(params.tenancyId));
     if (params?.status) sp.append('status', params.status);
     const qs = sp.toString() ? `?${sp.toString()}` : '';
-    const raw = await request<any[]>(`/rent-charges/${qs}`);
+    const raw = await requestAll<any>(`/rent-charges/${qs}`);
     return raw.map((c) => ({
       id: String(c.id),
       tenancyId: String(c.tenancyId),
@@ -300,7 +329,7 @@ export const paymentsApi = {
     if (params?.month) sp.append('month', params.month);
     if (params?.search) sp.append('search', params.search);
     const qs = sp.toString() ? `?${sp.toString()}` : '';
-    const raw = await request<any[]>(`/payments/${qs}`);
+    const raw = await requestAll<any>(`/payments/${qs}`);
     return raw.map((p) => ({
       id: String(p.id),
       receiptNumber: p.receiptNumber ?? p.receipt_number,
@@ -404,7 +433,7 @@ export const depositsApi = {
     if (params?.roomId) sp.append('roomId', String(params.roomId));
     if (params?.search) sp.append('search', params.search);
     const qs = sp.toString() ? `?${sp.toString()}` : '';
-    const raw = await request<any[]>(`/deposits/${qs}`);
+    const raw = await requestAll<any>(`/deposits/${qs}`);
     return raw.map(formatDeposit);
   },
   get: async (depositId: string | number): Promise<Deposit> => {
@@ -429,7 +458,7 @@ export const expensesApi = {
     if (params?.startDate) sp.append('startDate', params.startDate);
     if (params?.endDate) sp.append('endDate', params.endDate);
     const qs = sp.toString() ? `?${sp.toString()}` : '';
-    const raw = await request<any[]>(`/expenses/${qs}`);
+    const raw = await requestAll<any>(`/expenses/${qs}`);
     return raw.map((e) => ({
       id: String(e.id),
       category: e.category,

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Home, Eye, EyeOff, LogIn, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { Link } from 'react-router-dom';
 
 export const LoginPage: React.FC = () => {
   const { login } = useAuth();
@@ -117,6 +118,11 @@ export const LoginPage: React.FC = () => {
               )}
             </button>
           </form>
+          <div className="text-center">
+            <Link to="/password-reset" className="text-xs font-semibold text-brand-700 hover:underline">
+              Forgot your password?
+            </Link>
+          </div>
         </div>
 
         <p className="text-center text-[11px] text-gray-400">

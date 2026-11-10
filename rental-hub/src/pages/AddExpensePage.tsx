@@ -16,6 +16,7 @@ export const AddExpensePage: React.FC = () => {
   const [method, setMethod] = useState<PaymentMethod>('mpesa');
   const [reference, setReference] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,6 +29,7 @@ export const AddExpensePage: React.FC = () => {
       return;
     }
 
+    setIsSubmitting(true);
     try {
       await addExpense({
         title: description.trim(),
@@ -43,6 +45,8 @@ export const AddExpensePage: React.FC = () => {
       navigate('/expenses');
     } catch (err: any) {
       setError(err?.message || 'Failed to add expense');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -195,10 +199,13 @@ export const AddExpensePage: React.FC = () => {
         <div className="space-y-3 pt-2">
           <button
             type="submit"
-            className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-brand-700 hover:bg-[#0D3F34] text-white font-semibold text-sm shadow-2xs transition-colors cursor-pointer"
+            disabled={isSubmitting}
+            className={`w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-brand-700 hover:bg-[#0D3F34] text-white font-semibold text-sm shadow-2xs transition-colors ${
+              isSubmitting ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'
+            }`}
           >
             <Check size={18} />
-            <span>Save expense</span>
+            <span>{isSubmitting ? 'Saving expense...' : 'Save expense'}</span>
           </button>
 
           <button

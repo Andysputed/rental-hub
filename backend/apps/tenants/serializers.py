@@ -1,6 +1,7 @@
 from decimal import Decimal
 from rest_framework import serializers
-from django.db import transaction
+from django.db import transaction, IntegrityError
+from django.conf import settings as django_settings
 from apps.properties.models import Room
 from apps.payments.models import Deposit
 from .models import Tenant, Tenancy
@@ -26,7 +27,7 @@ class TenantSerializer(serializers.ModelSerializer):
         ]
 
     def get_activeRoom(self, obj):
-        active_tenancy = obj.tenancies.filter(status='active').select_related('room').first()
+        active_tenancy = obj.tenancies.filter(status='active', room__property_id=django_settings.RENTALHUB_PROPERTY_ID).select_related('room').first()
         if active_tenancy and active_tenancy.room:
             return {
                 'id': active_tenancy.room.id,
@@ -72,13 +73,19 @@ class TenantRegistrationSerializer(serializers.Serializer):
     email = serializers.EmailField(required=False, allow_blank=True, default='')
     roomId = serializers.IntegerField()
     moveInDate = serializers.DateField()
-    monthlyRent = serializers.DecimalField(max_digits=12, decimal_places=2)
-    deposit = serializers.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'), required=False)
-    rentDueDay = serializers.IntegerField(default=5, required=False)
+    monthlyRent = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal('0.01'))
+    deposit = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal('0.00'), default=Decimal('0.00'), required=False)
+    rentDueDay = serializers.IntegerField(min_value=1, max_value=28, default=5, required=False)
+
+    def validate_phone(self, value):
+        val = value.strip()
+        if Tenancy.objects.filter(tenant__phone=val, status='active').exists():
+            raise serializers.ValidationError(f"A tenant with phone '{val}' already has an active tenancy.")
+        return val
 
     def validate_roomId(self, value):
         try:
-            room = Room.objects.get(id=value)
+            room = Room.objects.get(id=value, property_id=django_settings.RENTALHUB_PROPERTY_ID)
         except Room.DoesNotExist:
             raise serializers.ValidationError("Selected room does not exist.")
 
@@ -100,6 +107,8 @@ class TenantRegistrationSerializer(serializers.Serializer):
             room = Room.objects.select_for_update().get(id=room_id)
             if room.status == 'occupied' or room.tenancies.filter(status='active').exists():
                 raise serializers.ValidationError({"roomId": f"{room.name} is already occupied."})
+            if Tenancy.objects.filter(tenant__phone=phone, status='active').exists():
+                raise serializers.ValidationError({"phone": f"A tenant with phone '{phone}' already has an active tenancy."})
 
             # Create or update tenant record
             tenant, _ = Tenant.objects.get_or_create(
@@ -118,15 +127,19 @@ class TenantRegistrationSerializer(serializers.Serializer):
             tenant.save()
 
             # Create active tenancy
-            tenancy = Tenancy.objects.create(
-                tenant=tenant,
-                room=room,
-                start_date=move_in_date,
-                monthly_rent=monthly_rent,
-                deposit=deposit_amount,
-                rent_due_day=rent_due_day,
-                status='active',
-            )
+            try:
+                with transaction.atomic():
+                    tenancy = Tenancy.objects.create(
+                        tenant=tenant,
+                        room=room,
+                        start_date=move_in_date,
+                        monthly_rent=monthly_rent,
+                        deposit=deposit_amount,
+                        rent_due_day=rent_due_day,
+                        status='active',
+                    )
+            except IntegrityError:
+                raise serializers.ValidationError({"phone": "This tenant or room already has an active tenancy."})
 
             # Update room occupancy
             room.status = 'occupied'
@@ -151,6 +164,12 @@ class MoveOutSerializer(serializers.Serializer):
     endDate = serializers.DateField(required=True)
     notes = serializers.CharField(required=False, allow_blank=True, default='')
 
+    def validate(self, attrs):
+        tenancy = getattr(self, 'instance', None)
+        if tenancy and tenancy.status == 'ended':
+            raise serializers.ValidationError({"endDate": "This tenancy has already ended and cannot be moved out again."})
+        return attrs
+
     def validate_endDate(self, value):
         tenancy = getattr(self, 'instance', None)
         if tenancy and value < tenancy.start_date:
@@ -159,6 +178,10 @@ class MoveOutSerializer(serializers.Serializer):
 
     def update(self, tenancy, validated_data):
         with transaction.atomic():
+            room = Room.objects.select_for_update().get(pk=tenancy.room_id)
+            tenancy = Tenancy.objects.select_for_update().select_related('tenant').get(pk=tenancy.pk)
+            if tenancy.status == 'ended':
+                raise serializers.ValidationError({"endDate": "This tenancy has already ended."})
             end_date = validated_data['endDate']
             tenancy.end_date = end_date
             tenancy.status = 'ended'
@@ -171,7 +194,6 @@ class MoveOutSerializer(serializers.Serializer):
                 tenant.save()
 
             # Mark room vacant
-            room = tenancy.room
             room.status = 'vacant'
             room.save()
 

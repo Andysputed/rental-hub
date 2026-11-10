@@ -1,27 +1,25 @@
-from rest_framework import viewsets, status
+import re
+from rest_framework import mixins, viewsets
 from rest_framework.response import Response
+from django.conf import settings as django_settings
 from .models import Expense
 from .serializers import ExpenseSerializer
 
 
-class ExpenseViewSet(viewsets.ModelViewSet):
+class ExpenseViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.CreateModelMixin, viewsets.GenericViewSet):
     serializer_class = ExpenseSerializer
 
     def get_queryset(self):
-        qs = Expense.objects.all().select_related('property')
+        qs = Expense.objects.filter(property_id=django_settings.RENTALHUB_PROPERTY_ID).select_related('property')
 
         category = self.request.query_params.get('category')
         if category in ('maintenance', 'utilities', 'cleaning'):
             qs = qs.filter(category=category)
 
         month = self.request.query_params.get('month')
-        if month:
-            # month in YYYY-MM format
-            try:
-                year, month_num = month.split('-')
-                qs = qs.filter(date__year=year, date__month=month_num)
-            except ValueError:
-                pass
+        if month and re.match(r'^\d{4}-(0[1-9]|1[0-2])$', month):
+            year, month_num = month.split('-')
+            qs = qs.filter(date__year=int(year), date__month=int(month_num))
 
         start_date = self.request.query_params.get('startDate')
         end_date = self.request.query_params.get('endDate')

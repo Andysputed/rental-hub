@@ -5,7 +5,7 @@ import { useRental } from '../context/RentalContext';
 import { Badge } from '../components/common/Badge';
 import { MoveOutModal } from '../components/common/MoveOutModal';
 import { MonthSelector } from '../components/common/MonthSelector';
-import { formatKSh, formatMonthYear, formatMonthShort } from '../utils/format';
+import { formatKSh, formatMonthYear } from '../utils/format';
 
 export const TenantsPage: React.FC = () => {
   const navigate = useNavigate();

@@ -118,7 +118,16 @@ export interface ReceiptData {
     chargeAmount: number;
     balanceBefore: number;
     balanceAfter: number;
+    amount?: number;
   };
+  allocations?: Array<{
+    chargeId: string | number;
+    month: string;
+    chargeAmount: number;
+    amount: number;
+    balanceBefore: number;
+    balanceAfter: number;
+  }>;
 }
 
 export type ExpenseCategory = 'maintenance' | 'utilities' | 'cleaning';

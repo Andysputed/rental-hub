@@ -2,10 +2,11 @@ from decimal import Decimal
 from rest_framework import serializers
 from django.db import models, transaction
 from django.utils import timezone
+from django.conf import settings as django_settings
 from apps.properties.models import Room
 from apps.tenants.models import Tenant, Tenancy
 from apps.rent.models import RentCharge
-from .models import Payment, PaymentAllocation, Deposit, DepositDeduction
+from .models import Payment, PaymentAllocation, Deposit, DepositDeduction, ReceiptSequence
 
 
 class PaymentAllocationSerializer(serializers.ModelSerializer):
@@ -49,22 +50,6 @@ class PaymentSerializer(serializers.ModelSerializer):
         ]
 
 
-def generate_next_receipt_number(payment_date):
-    """Generate sequential receipt number format: RH-YYYY-XXX."""
-    year = payment_date.year
-    prefix = f"RH-{year}-"
-    last_payment = Payment.objects.filter(receipt_number__startswith=prefix).order_by('-receipt_number').first()
-    if last_payment:
-        try:
-            last_seq = int(last_payment.receipt_number.split('-')[-1])
-            new_seq = last_seq + 1
-        except ValueError:
-            new_seq = Payment.objects.filter(receipt_number__startswith=prefix).count() + 1
-    else:
-        new_seq = 1
-    return f"{prefix}{new_seq:03d}"
-
-
 class RecordPaymentSerializer(serializers.Serializer):
     roomId = serializers.IntegerField(required=True)
     tenancyId = serializers.IntegerField(required=False, allow_null=True)
@@ -84,7 +69,7 @@ class RecordPaymentSerializer(serializers.Serializer):
     def validate(self, attrs):
         room_id = attrs.get('roomId')
         try:
-            room = Room.objects.get(id=room_id)
+            room = Room.objects.get(id=room_id, property_id=django_settings.RENTALHUB_PROPERTY_ID)
         except Room.DoesNotExist:
             raise serializers.ValidationError({"roomId": "Room does not exist."})
 
@@ -120,30 +105,30 @@ class RecordPaymentSerializer(serializers.Serializer):
                     raise serializers.ValidationError({"roomId": f"{room.name} does not have an active tenancy."})
             tenant = tenancy.tenant
 
-            # Determine charge to apply payment to
-            charge = None
+            # Determine primary charge to apply payment to
+            primary_charge = None
             if charge_id:
                 try:
-                    charge = RentCharge.objects.select_for_update().get(id=charge_id, tenancy=tenancy)
+                    primary_charge = RentCharge.objects.select_for_update().get(id=charge_id, tenancy=tenancy)
                 except RentCharge.DoesNotExist:
                     raise serializers.ValidationError({"chargeId": "Specified rent charge does not belong to this tenancy."})
             else:
                 # Find current month charge or oldest unpaid charge for this tenancy
                 payment_month = payment_date.strftime('%Y-%m')
-                charge = RentCharge.objects.select_for_update().filter(
+                primary_charge = RentCharge.objects.select_for_update().filter(
                     tenancy=tenancy,
                     month=payment_month
                 ).first()
 
-                if not charge:
+                if not primary_charge:
                     # Look for oldest charge with outstanding balance
-                    charge = RentCharge.objects.select_for_update().filter(
+                    primary_charge = RentCharge.objects.select_for_update().filter(
                         tenancy=tenancy
                     ).exclude(status='paid').order_by('month').first()
 
-                if not charge:
+                if not primary_charge:
                     # If still no charge, create one for this month
-                    charge = RentCharge.objects.create(
+                    primary_charge = RentCharge.objects.create(
                         tenancy=tenancy,
                         room=room,
                         month=payment_month,
@@ -153,14 +138,43 @@ class RecordPaymentSerializer(serializers.Serializer):
                         status='unpaid'
                     )
 
-            # Generate receipt number
-            receipt_number = generate_next_receipt_number(payment_date)
+            # Candidate charges for allocation: primary charge first, then other unpaid charges
+            candidate_charges = [primary_charge]
+            other_unpaid = list(
+                RentCharge.objects.select_for_update()
+                .filter(tenancy=tenancy)
+                .exclude(id=primary_charge.id)
+                .filter(paid_amount__lt=models.F('amount'))
+                .order_by('month', 'due_date')
+            )
+            candidate_charges.extend(other_unpaid)
+
+            total_available_due = sum((c.balance for c in candidate_charges), Decimal('0.00'))
+            if amount > total_available_due:
+                raise serializers.ValidationError({
+                    "amount": f"Payment amount ({amount} KES) exceeds the total outstanding rent charges ({total_available_due} KES) for this tenancy."
+                })
+
+            # The counter row serializes issuers for a year. Both the increment and
+            # payment roll back together if creation/allocation fails.
+            sequence, _created = ReceiptSequence.objects.get_or_create(
+                year=payment_date.year,
+                defaults={'next_number': self._next_historical_sequence(payment_date.year)},
+            )
+            sequence = ReceiptSequence.objects.select_for_update().get(pk=sequence.pk)
+            sequence.next_number = max(
+                sequence.next_number,
+                self._next_historical_sequence(payment_date.year),
+            )
+            receipt_number = f"RH-{payment_date.year}-{sequence.next_number:03d}"
+            sequence.next_number += 1
+            sequence.save(update_fields=['next_number'])
 
             payment = Payment.objects.create(
                 tenant=tenant,
                 tenancy=tenancy,
                 room=room,
-                charge=charge,
+                charge=primary_charge,
                 receipt_number=receipt_number,
                 amount=amount,
                 date=payment_date,
@@ -169,19 +183,38 @@ class RecordPaymentSerializer(serializers.Serializer):
                 notes=notes
             )
 
-            # Allocate payment to the charge
-            PaymentAllocation.objects.create(
-                payment=payment,
-                charge=charge,
-                amount=amount
-            )
-
-            # Update charge balance and status
-            charge.paid_amount += amount
-            charge.update_status()
-            charge.save()
+            # Allocate payment strictly up to each charge's permissible balance
+            remaining_payment = amount
+            for c in candidate_charges:
+                if remaining_payment <= Decimal('0.00'):
+                    break
+                charge_balance = c.balance
+                if charge_balance <= Decimal('0.00'):
+                    continue
+                alloc_amount = min(charge_balance, remaining_payment)
+                PaymentAllocation.objects.create(
+                    payment=payment,
+                    charge=c,
+                    amount=alloc_amount
+                )
+                c.paid_amount += alloc_amount
+                c.update_status()
+                c.save()
+                remaining_payment -= alloc_amount
 
         return payment
+
+    @staticmethod
+    def _next_historical_sequence(year):
+        prefix = f"RH-{year}-"
+        values = Payment.objects.filter(receipt_number__startswith=prefix).values_list('receipt_number', flat=True)
+        numbers = []
+        for value in values:
+            try:
+                numbers.append(int(value[len(prefix):]))
+            except ValueError:
+                continue
+        return max(numbers, default=0) + 1
 
 
 class DepositDeductionSerializer(serializers.ModelSerializer):
@@ -334,6 +367,10 @@ class DepositSettlementSerializer(serializers.Serializer):
             raise serializers.ValidationError({
                 "refundAmount": f"Refund amount ({refund_amount} KES) cannot exceed refundable balance ({max_refundable} KES)."
             })
+        if refund_amount != max_refundable:
+            raise serializers.ValidationError({
+                "refundAmount": "Refund plus recorded deductions must account for the full deposit. Record any retained balance as a deduction."
+            })
 
         attrs['resolved_tenancy'] = tenancy
         attrs['resolved_deposit'] = deposit
@@ -349,8 +386,10 @@ class DepositSettlementSerializer(serializers.Serializer):
         deposit_id = validated_data['resolved_deposit'].id
 
         with transaction.atomic():
-            deposit = Deposit.objects.select_for_update().get(id=deposit_id)
+            room_id = Tenancy.objects.only('room_id').get(id=tenancy_id).room_id
+            room = Room.objects.select_for_update().get(id=room_id)
             tenancy = Tenancy.objects.select_for_update().get(id=tenancy_id)
+            deposit = Deposit.objects.select_for_update().get(id=deposit_id)
 
             if deposit.status in ('settled', 'refunded', 'applied'):
                 raise serializers.ValidationError({"deposit": "This deposit has already been settled and cannot be settled again."})
@@ -358,6 +397,17 @@ class DepositSettlementSerializer(serializers.Serializer):
             rent_deduction = validated_data['rentDeduction']
             repair_deductions = validated_data.get('repairDeductions', [])
             refund_amount = validated_data['refundAmount']
+            unpaid_charges = list(RentCharge.objects.select_for_update().filter(
+                tenancy=tenancy, paid_amount__lt=models.F('amount')
+            ).order_by('month', 'due_date'))
+            current_arrears = sum((charge.balance for charge in unpaid_charges), Decimal('0.00'))
+            total_repairs = sum((item['amount'] for item in repair_deductions), Decimal('0.00'))
+            if rent_deduction > current_arrears:
+                raise serializers.ValidationError({
+                    "rentDeduction": f"Rent deduction exceeds current outstanding arrears ({current_arrears} KES)."
+                })
+            if rent_deduction + total_repairs + refund_amount != deposit.amount:
+                raise serializers.ValidationError({"refundAmount": "Deductions and refund must account for the full held deposit."})
             refund_method = validated_data.get('refundMethod', 'mpesa')
             refund_reference = validated_data.get('refundReference', '')
             refund_date = validated_data.get('refundDate') or validated_data.get('settlementDate') or timezone.now().date()
@@ -367,10 +417,6 @@ class DepositSettlementSerializer(serializers.Serializer):
             # 1. Apply rent deduction to unpaid charges
             remaining_rent_ded = rent_deduction
             if remaining_rent_ded > Decimal('0.00'):
-                unpaid_charges = RentCharge.objects.select_for_update().filter(
-                    tenancy=tenancy, paid_amount__lt=models.F('amount')
-                ).order_by('month', 'due_date')
-
                 for charge in unpaid_charges:
                     if remaining_rent_ded <= Decimal('0.00'):
                         break
@@ -399,7 +445,6 @@ class DepositSettlementSerializer(serializers.Serializer):
                 )
 
             # 3. Update deposit record
-            total_repairs = validated_data['total_repairs']
             deposit.rent_deducted = rent_deduction
             deposit.repairs_deducted = total_repairs
             deposit.refund_amount = refund_amount
@@ -429,7 +474,6 @@ class DepositSettlementSerializer(serializers.Serializer):
                     tenant.status = 'former'
                     tenant.save()
 
-                room = tenancy.room
                 room.status = 'vacant'
                 room.save()
 

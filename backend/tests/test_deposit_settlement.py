@@ -14,7 +14,7 @@ from apps.rent.models import RentCharge
 class DepositSettlementTests(TestCase):
     def setUp(self):
         self.client = APIClient()
-        self.user = User.objects.create_user(username='testlandlord', password='testpass123')
+        self.user = User.objects.create_superuser(username='testlandlord', email='test@example.com', password='testpass123')
         self.client.force_authenticate(user=self.user)
         self.prop = Property.objects.create(name="Acacia House", currency="KES")
         self.room = Room.objects.create(

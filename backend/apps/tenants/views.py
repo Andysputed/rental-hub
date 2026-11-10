@@ -1,9 +1,10 @@
 from decimal import Decimal
-from rest_framework import viewsets, status
+from rest_framework import mixins, viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db import models
 from django.db.models import Q
+from django.conf import settings as django_settings
 from apps.payments.serializers import DepositSerializer, DepositSettlementSerializer
 from .models import Tenant, Tenancy
 from .serializers import (
@@ -18,7 +19,7 @@ class TenantViewSet(viewsets.ModelViewSet):
     serializer_class = TenantSerializer
 
     def get_queryset(self):
-        qs = Tenant.objects.all().prefetch_related('tenancies__room')
+        qs = Tenant.objects.filter(tenancies__room__property_id=django_settings.RENTALHUB_PROPERTY_ID).distinct().prefetch_related('tenancies__room')
         search = self.request.query_params.get('search', '').strip()
         if search:
             qs = qs.filter(Q(full_name__icontains=search) | Q(phone__icontains=search))
@@ -28,11 +29,11 @@ class TenantViewSet(viewsets.ModelViewSet):
         return qs.order_by('full_name')
 
 
-class TenancyViewSet(viewsets.ModelViewSet):
+class TenancyViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     serializer_class = TenancySerializer
 
     def get_queryset(self):
-        qs = Tenancy.objects.all().select_related('tenant', 'room')
+        qs = Tenancy.objects.filter(room__property_id=django_settings.RENTALHUB_PROPERTY_ID).select_related('tenant', 'room')
         room_id = self.request.query_params.get('roomId')
         if room_id:
             qs = qs.filter(room_id=room_id)
