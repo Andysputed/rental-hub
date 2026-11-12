@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, Download, CheckCircle2, Home, Check, X, Copy } from 'lucide-react';
-import { useRental } from '../context/RentalContext';
+import { useRental } from '../context/useRental';
 import { Badge } from '../components/common/Badge';
 import { formatKSh, formatDateShort, numberToWordsKSh, formatMonthYear } from '../utils/format';
 import { getWhatsAppNumber } from '../utils/phone';
@@ -35,14 +35,43 @@ export const ReceiptPage: React.FC = () => {
 
   const room = rooms.find((r) => String(r.id) === String(payment.roomId));
   const tenant = tenants.find((t) => String(t.id) === String(payment.tenantId));
-  const charge =
+
+  // Resolve allocation breakdown
+  const allocations = (payment.allocations && payment.allocations.length > 0)
+    ? payment.allocations.map((a) => {
+        const c = rentCharges.find((ch) => String(ch.id) === String(a.chargeId));
+        const cAmount = c ? c.amount : Number(a.amount);
+        const cPaid = c ? c.paidAmount : Number(a.amount);
+        const bal = Math.max(0, cAmount - cPaid);
+        const m = a.chargeMonth ? formatMonthYear(a.chargeMonth) : c?.month ? formatMonthYear(c.month) : 'Rent';
+        return {
+          month: m,
+          chargeAmount: cAmount,
+          allocatedAmount: Number(a.amount),
+          remainingBalance: bal,
+        };
+      })
+    : [];
+
+  const reservations = (payment.reservations && payment.reservations.length > 0)
+    ? payment.reservations.map((r) => ({
+        month: formatMonthYear(r.month),
+        amount: Number(r.amount),
+        status: r.status,
+      }))
+    : [];
+
+  const availableCredit = Number(payment.availableCredit || 0);
+
+  const fallbackCharge =
     (payment.chargeId ? rentCharges.find((c) => String(c.id) === String(payment.chargeId)) : undefined) ||
     rentCharges.find((c) => String(c.tenancyId) === String(payment.tenancyId));
 
-  const chargeAmount = charge ? charge.amount : 10000;
-  const remainingBalance = Math.max(0, chargeAmount - (charge ? charge.paidAmount : payment.amount));
-  const monthName = charge?.month
-    ? formatMonthYear(charge.month)
+  const fallbackChargeAmount = fallbackCharge ? fallbackCharge.amount : Number(payment.amount);
+  const fallbackApplied = Math.min(Number(payment.amount), fallbackChargeAmount);
+  const fallbackRemaining = Math.max(0, fallbackChargeAmount - (fallbackCharge ? fallbackCharge.paidAmount : fallbackApplied));
+  const fallbackMonth = fallbackCharge?.month
+    ? formatMonthYear(fallbackCharge.month)
     : payment.date
     ? formatMonthYear(payment.date.slice(0, 7))
     : 'Rent';
@@ -52,9 +81,12 @@ export const ReceiptPage: React.FC = () => {
     room,
     tenant,
     settings,
-    chargeAmount,
-    remainingBalance,
-    monthName,
+    chargeAmount: fallbackChargeAmount,
+    remainingBalance: fallbackRemaining,
+    monthName: fallbackMonth,
+    allocations: allocations.length > 0 ? allocations : undefined,
+    reservations: reservations.length > 0 ? reservations : undefined,
+    availableCredit: availableCredit > 0 ? availableCredit : undefined,
   };
 
   const handlePrint = () => {
@@ -94,9 +126,9 @@ export const ReceiptPage: React.FC = () => {
         });
         return;
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       // User cancelled share dialog or not supported — continue to fallback
-      if (err?.name === 'AbortError') return;
+      if (err instanceof DOMException && err.name === 'AbortError') return;
     }
 
     // Fallback for desktop & browsers without direct file-sharing to WhatsApp:
@@ -231,8 +263,8 @@ export const ReceiptPage: React.FC = () => {
               <Home size={18} strokeWidth={2.2} />
             </div>
             <div>
-              <span className="text-base font-bold text-gray-900">{settings.propertyName || 'Acacia House'}</span>
-              <div className="text-[11px] text-gray-500">Nairobi, Kenya</div>
+              <span className="text-base font-bold text-gray-900">{settings.propertyName || 'Kimumu Rentals'}</span>
+              <div className="text-[11px] text-gray-500">{settings.location || 'Kimumu, Eldoret, Kenya'}</div>
             </div>
           </div>
           <Badge variant="paid">Received</Badge>
@@ -295,23 +327,73 @@ export const ReceiptPage: React.FC = () => {
 
         <div className="border-t border-gray-100" />
 
-        {/* Allocation */}
-        <div className="space-y-2 text-xs">
-          <div className="font-semibold text-gray-900">Allocation · {monthName} rent</div>
-          <div className="flex justify-between text-gray-600">
-            <span>Monthly rent charge</span>
-            <span className="font-semibold text-gray-900">{formatKSh(chargeAmount)}</span>
-          </div>
-          <div className="flex justify-between text-gray-600">
-            <span>Payment allocated</span>
-            <span className="font-semibold text-brand-700">- {formatKSh(payment.amount)}</span>
-          </div>
-          <div className="flex justify-between text-gray-600 pt-1 border-t border-gray-50">
-            <span className="font-medium">Remaining balance</span>
-            <span className={`font-semibold ${remainingBalance > 0 ? 'text-amber-700' : 'text-brand-700'}`}>
-              {remainingBalance > 0 ? formatKSh(remainingBalance) : 'KSh 0 (Paid in full)'}
-            </span>
-          </div>
+        {/* Allocation Breakdown */}
+        <div className="space-y-3 text-xs">
+          {allocations.length > 0 || reservations.length > 0 ? (
+            <>
+              {allocations.map((item, idx) => (
+                <div key={idx} className="space-y-1.5 pb-2 border-b border-gray-50 last:border-b-0 last:pb-0">
+                  <div className="font-semibold text-gray-900">Allocation · {item.month} rent</div>
+                  <div className="flex justify-between text-gray-600">
+                    <span>Monthly rent charge</span>
+                    <span className="font-semibold text-gray-900">{formatKSh(item.chargeAmount)}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-600">
+                    <span>Payment applied</span>
+                    <span className="font-semibold text-brand-700">- {formatKSh(item.allocatedAmount)}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-600 pt-1 border-t border-gray-50">
+                    <span className="font-medium">Remaining balance</span>
+                    <span className={`font-semibold ${item.remainingBalance > 0 ? 'text-amber-700' : 'text-brand-700'}`}>
+                      {item.remainingBalance > 0 ? formatKSh(item.remainingBalance) : 'KSh 0 (Paid in full)'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+              {reservations.map((res, idx) => (
+                <div key={idx} className="space-y-1.5 pb-2 border-b border-gray-50 last:border-b-0 last:pb-0">
+                  <div className="font-semibold text-gray-900">Future Reservation · {res.month} rent</div>
+                  <div className="flex justify-between text-gray-600">
+                    <span>Reserved amount</span>
+                    <span className="font-semibold text-brand-700">{formatKSh(res.amount)}</span>
+                  </div>
+                  <div className="text-[11px] text-gray-500">Held specifically for {res.month} rent charge.</div>
+                </div>
+              ))}
+              {availableCredit > 0 && (
+                <div className="flex justify-between text-gray-700 pt-1 border-t border-gray-100 font-medium">
+                  <span>Advance credit held for future rent</span>
+                  <span className="font-semibold text-brand-700">{formatKSh(availableCredit)}</span>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="space-y-1.5">
+              <div className="font-semibold text-gray-900">Allocation · {fallbackMonth} rent</div>
+              <div className="flex justify-between text-gray-600">
+                <span>Monthly rent charge</span>
+                <span className="font-semibold text-gray-900">{formatKSh(fallbackChargeAmount)}</span>
+              </div>
+              <div className="flex justify-between text-gray-600">
+                <span>Payment allocated</span>
+                <span className="font-semibold text-brand-700">- {formatKSh(fallbackApplied)}</span>
+              </div>
+              <div className="flex justify-between text-gray-600 pt-1 border-t border-gray-50">
+                <span className="font-medium">Remaining balance</span>
+                <span className={`font-semibold ${fallbackRemaining > 0 ? 'text-amber-700' : 'text-brand-700'}`}>
+                  {fallbackRemaining > 0 ? formatKSh(fallbackRemaining) : 'KSh 0 (Paid in full)'}
+                </span>
+              </div>
+              {Number(payment.amount) > fallbackApplied && (
+                <div className="flex justify-between text-gray-700 pt-1 font-medium">
+                  <span>Advance credit retained</span>
+                  <span className="font-semibold text-brand-700">
+                    {formatKSh(Number(payment.amount) - fallbackApplied)}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="border-t border-gray-100" />

@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Phone, MessageSquare, Plus, FileText, ChevronRight, LogOut, UserPlus, Info, History } from 'lucide-react';
-import { useRental } from '../context/RentalContext';
+import { useRental } from '../context/useRental';
 import { Badge } from '../components/common/Badge';
 import { MoveOutModal } from '../components/common/MoveOutModal';
+import { RecordDepositPaymentModal } from '../components/common/RecordDepositPaymentModal';
 import { formatKSh, formatDateShort, formatMonthYear, formatMonthShort } from '../utils/format';
 import { getWhatsAppNumber, normalizeKenyanPhone, isValidPhone } from '../utils/phone';
 import { generateRentReminder } from '../utils/messages';
@@ -14,6 +15,7 @@ export const TenantDetailsPage: React.FC = () => {
   const { rooms, tenants, tenancies, rentCharges, payments, deposits, settings, moveOutTenant, selectedMonth } = useRental();
 
   const [isMoveOutOpen, setIsMoveOutOpen] = useState(false);
+  const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
 
   // Determine mode: by tenant ID or by room ID
   const isTenantView = Boolean(tenantId);
@@ -148,14 +150,28 @@ export const TenantDetailsPage: React.FC = () => {
 
   // Strict tenancy isolation: charges and payments belong strictly to THIS tenancy!
   const charge = tenancy
+    && selectedMonth >= tenancy.startDate.slice(0, 7)
+    && (!tenancy.endDate || selectedMonth <= tenancy.endDate.slice(0, 7))
     ? rentCharges.find((c) => String(c.tenancyId) === String(tenancy.id) && c.month === selectedMonth)
     : undefined;
   const tenantPayments = tenancy
     ? payments.filter((p) => String(p.tenancyId) === String(tenancy.id))
     : [];
+  const currentDate = new Date();
+  const localToday = [currentDate.getFullYear(), String(currentDate.getMonth() + 1).padStart(2, '0'), String(currentDate.getDate()).padStart(2, '0')].join('-');
+  const receivedTotal = tenantPayments.reduce((sum, payment) => sum + Number(payment.amount), 0);
+  const allocatedTotal = tenantPayments.reduce((sum, payment) => sum + (payment.isReversed ? 0 :
+    (payment.allocations || []).reduce((subtotal, allocation) => subtotal + Number(allocation.amount), 0)), 0);
+  const availableAdvance = tenantPayments.reduce((sum, payment) => sum + (payment.isReversed ? 0 : Number(payment.availableCredit || 0)), 0);
+  const reservedFuture = tenantPayments.reduce((sum, payment) => sum + (payment.isReversed ? 0 :
+    (payment.reservations || []).filter((reservation) => reservation.status === 'reserved')
+      .reduce((subtotal, reservation) => subtotal + Number(reservation.remainingAmount), 0)), 0);
+  const refundsTotal = tenantPayments.reduce((sum, payment) => sum +
+    (payment.refunds || []).reduce((subtotal, refund) => subtotal + Number(refund.amount), 0), 0);
+  const reversedTotal = tenantPayments.reduce((sum, payment) => sum + (payment.isReversed ? Number(payment.amount) : 0), 0);
 
   const balance = charge ? charge.amount - charge.paidAmount : 0;
-  const isOverdue = charge && charge.status === 'overdue' && balance > 0;
+  const isOverdue = charge && charge.dueDate <= localToday && balance > 0;
   const isActive = tenancy?.status === 'active';
 
   // All unpaid/partial/overdue charges for this tenancy (for reminder message)
@@ -164,6 +180,9 @@ export const TenantDetailsPage: React.FC = () => {
         .filter(
           (c) =>
             String(c.tenancyId) === String(tenancy.id) &&
+            c.dueDate <= localToday &&
+            c.month >= tenancy.startDate.slice(0, 7) &&
+            (!tenancy.endDate || c.month <= tenancy.endDate.slice(0, 7)) &&
             (c.status === 'overdue' || c.status === 'unpaid' || c.status === 'partial') &&
             c.amount - c.paidAmount > 0
         )
@@ -221,7 +240,7 @@ export const TenantDetailsPage: React.FC = () => {
             {isActive ? 'Tenant details' : 'Former tenant profile'}
           </h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            {settings.propertyName} · {room?.name || 'Acacia House'}
+            {settings.propertyName} · {room?.name || settings.location}
           </p>
         </div>
 
@@ -379,8 +398,8 @@ export const TenantDetailsPage: React.FC = () => {
           <span className="text-xs font-semibold text-gray-600">
             {isActive ? `${formatMonthYear(selectedMonth)} balance` : 'Outstanding historical balance'}
           </span>
-          <Badge variant={isOverdue ? 'overdue' : charge ? 'paid' : 'neutral'}>
-            {isOverdue ? 'Overdue' : charge ? 'Paid' : `No charges for ${formatMonthShort(selectedMonth)}`}
+          <Badge variant={isOverdue ? 'overdue' : charge && balance > 0 ? 'neutral' : charge ? 'paid' : 'neutral'}>
+            {isOverdue ? 'Overdue' : charge && balance > 0 ? 'Due soon' : charge ? 'Paid' : ('No charges for ' + formatMonthShort(selectedMonth))}
           </Badge>
         </div>
 
@@ -470,50 +489,120 @@ export const TenantDetailsPage: React.FC = () => {
               </span>
             </div>
             <div className="flex justify-between py-2">
-              <span className="text-gray-500">Deposit held</span>
-              <span className="font-semibold text-gray-900">
-                {formatKSh(tenancy.deposit || 0)}
-              </span>
-            </div>
-            {(() => {
-              const dep = deposits.find((d) => String(d.tenancyId) === String(tenancy.id));
-              if (!dep) return null;
-              return (
-                <>
-                  <div className="flex justify-between py-2">
-                    <span className="text-gray-500">Deposit status</span>
-                    <span className="font-semibold text-gray-900 capitalize">{dep.status}</span>
-                  </div>
-                  {dep.status !== 'held' && (
-                    <>
-                      {dep.rentDeducted > 0 && (
-                        <div className="flex justify-between py-2 text-amber-800">
-                          <span>Rent arrears deducted</span>
-                          <span className="font-semibold">- {formatKSh(dep.rentDeducted)}</span>
-                        </div>
-                      )}
-                      {dep.repairsDeducted > 0 && (
-                        <div className="flex justify-between py-2 text-amber-800">
-                          <span>Repairs deducted</span>
-                          <span className="font-semibold">- {formatKSh(dep.repairsDeducted)}</span>
-                        </div>
-                      )}
-                      {dep.refundAmount > 0 && (
-                        <div className="flex justify-between py-2 text-brand-700">
-                          <span>Refund disbursed</span>
-                          <span className="font-bold">{formatKSh(dep.refundAmount)}</span>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </>
-              );
-            })()}
-            <div className="flex justify-between py-2">
-              <span className="text-gray-500">Status</span>
+              <span className="text-gray-500">Tenancy status</span>
               <span className="font-semibold text-gray-900 capitalize">{tenancy.status}</span>
             </div>
           </div>
+
+          {/* Security Deposit Management Card */}
+          {(() => {
+            const dep = deposits.find((d) => String(d.tenancyId) === String(tenancy.id));
+            if (!dep) return null;
+
+            const isWaived = dep.isWaived || dep.status === 'waived';
+            const outstanding = dep.outstandingBalance ?? Math.max(0, (dep.requiredAmount || 0) - (dep.totalPaid ?? dep.amount ?? 0));
+            const totalPaid = dep.totalPaid ?? dep.amount ?? 0;
+            const required = dep.requiredAmount || (isWaived ? 0 : totalPaid);
+
+            return (
+              <div className="pt-3 border-t border-gray-100 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-xs uppercase tracking-wider text-gray-700">Security Deposit</div>
+                  <Badge variant={
+                    dep.status === 'held' ? 'paid' :
+                    dep.status === 'partially_paid' || dep.status === 'unpaid' ? 'overdue' : 'neutral'
+                  }>
+                    {dep.status === 'partially_paid' ? 'Partially Paid' :
+                     dep.status === 'unpaid' ? 'Unpaid' :
+                     dep.status === 'waived' ? 'Waived' :
+                     dep.status === 'held' ? 'Held' :
+                     dep.status === 'settled' ? 'Settled' :
+                     dep.status === 'refunded' ? 'Refunded' : dep.status}
+                  </Badge>
+                </div>
+
+                {isWaived ? (
+                  <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-1">
+                    <div className="font-semibold">Deposit Requirement Waived</div>
+                    <div className="text-[11px] text-amber-800">
+                      Reason: {dep.waivedReason || 'Authorized exemption'}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-gray-50 border border-gray-200/70 rounded-xl p-3.5 space-y-2 text-xs">
+                    <div className="flex justify-between text-gray-600">
+                      <span>Deposit Required</span>
+                      <span className="font-semibold text-gray-900">{formatKSh(required)}</span>
+                    </div>
+                    <div className="flex justify-between text-gray-600">
+                      <span>Total Paid / Held</span>
+                      <span className="font-semibold text-brand-700">{formatKSh(totalPaid)}</span>
+                    </div>
+                    <div className="flex justify-between text-gray-700 pt-1.5 border-t border-gray-200">
+                      <span className="font-medium">Outstanding Balance</span>
+                      <span className={`font-bold ${outstanding > 0 ? 'text-amber-700' : 'text-brand-700'}`}>
+                        {formatKSh(outstanding)}
+                      </span>
+                    </div>
+
+                    {outstanding > 0 && tenancy.status === 'active' && (
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsDepositModalOpen(true)}
+                          className="w-full py-2 px-3 rounded-lg bg-brand-700 hover:bg-[#0D3F34] text-white text-xs font-semibold shadow-2xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <Plus size={14} />
+                          <span>Record Deposit Payment</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Deposit payment installments history */}
+                    {dep.payments && dep.payments.length > 0 && (
+                      <div className="pt-2 border-t border-gray-200/60 space-y-1.5">
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                          Payment Installments ({dep.payments.length})
+                        </div>
+                        {dep.payments.map((p, idx) => (
+                          <div key={idx} className="flex items-center justify-between text-[11px] py-1 border-b border-gray-200/50 last:border-b-0">
+                            <div>
+                              <span className="font-medium text-gray-900">{formatDateShort(p.paymentDate)}</span>
+                              <span className="text-gray-400 ml-1.5 capitalize">({p.method}{p.reference ? ` · ${p.reference}` : ''})</span>
+                            </div>
+                            <span className="font-semibold text-brand-700">{formatKSh(p.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {dep.status !== 'held' && dep.status !== 'partially_paid' && dep.status !== 'unpaid' && dep.status !== 'waived' && (
+                  <div className="text-xs divide-y divide-gray-100 pt-1">
+                    {dep.rentDeducted > 0 && (
+                      <div className="flex justify-between py-1.5 text-amber-800">
+                        <span>Rent arrears deducted</span>
+                        <span className="font-semibold">- {formatKSh(dep.rentDeducted)}</span>
+                      </div>
+                    )}
+                    {dep.repairsDeducted > 0 && (
+                      <div className="flex justify-between py-1.5 text-amber-800">
+                        <span>Repairs deducted</span>
+                        <span className="font-semibold">- {formatKSh(dep.repairsDeducted)}</span>
+                      </div>
+                    )}
+                    {dep.refundAmount > 0 && (
+                      <div className="flex justify-between py-1.5 text-brand-700">
+                        <span>Refund disbursed</span>
+                        <span className="font-bold">{formatKSh(dep.refundAmount)}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           <div className="text-[11px] text-gray-400 pt-1 border-t border-gray-100">
             Security deposit is held separately from rent revenue and belongs to this specific tenancy.
@@ -526,6 +615,15 @@ export const TenantDetailsPage: React.FC = () => {
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-bold text-gray-900">Payment history</h2>
           <span className="text-xs text-gray-500">{tenantPayments.length} payment(s)</span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 rounded-2xl border border-[#E5E7EB] bg-white p-4 text-xs">
+          <div className="text-gray-500">Payments received <strong className="block pt-1 text-gray-900">{formatKSh(receivedTotal)}</strong></div>
+          <div className="text-gray-500">Rent allocated <strong className="block pt-1 text-gray-900">{formatKSh(allocatedTotal)}</strong></div>
+          <div className="text-gray-500">Available advance <strong className="block pt-1 text-brand-700">{formatKSh(availableAdvance)}</strong></div>
+          <div className="text-gray-500">Reserved future rent <strong className="block pt-1 text-gray-900">{formatKSh(reservedFuture)}</strong></div>
+          <div className="text-gray-500">Refunded <strong className="block pt-1 text-gray-900">{formatKSh(refundsTotal)}</strong></div>
+          <div className="text-gray-500">Reversed receipts <strong className="block pt-1 text-gray-900">{formatKSh(reversedTotal)}</strong></div>
         </div>
 
         {tenantPayments.length === 0 ? (
@@ -555,9 +653,32 @@ export const TenantDetailsPage: React.FC = () => {
                   <span className="font-semibold text-gray-900">{p.reference}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-400">Allocation</span>
-                  <span className="font-semibold text-gray-900">Rent payment</span>
+                  <span className="text-gray-400">Rent periods covered</span>
+                  <span className="text-right font-semibold text-gray-900">
+                    {(p.allocations || []).length
+                      ? (p.allocations || []).map((allocation) => allocation.chargeMonth + ': ' + formatKSh(Number(allocation.amount))).join(', ')
+                      : 'No rent charge applied'}
+                  </span>
                 </div>
+                {(p.reservations || []).filter((reservation) => reservation.status === 'reserved').map((reservation) => (
+                  <div key={reservation.id} className="flex justify-between">
+                    <span className="text-gray-400">Reserved for {reservation.month}</span>
+                    <span className="font-semibold text-gray-900">{formatKSh(Number(reservation.remainingAmount))}</span>
+                  </div>
+                ))}
+                {p.availableCredit !== undefined && p.availableCredit > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Unallocated advance</span>
+                    <span className="font-semibold text-brand-700">{formatKSh(p.availableCredit)}</span>
+                  </div>
+                )}
+                {(p.refunds || []).map((refund) => (
+                  <div key={refund.id} className="flex justify-between">
+                    <span className="text-gray-400">Refund · {formatDateShort(refund.date)}</span>
+                    <span className="font-semibold text-gray-900">{formatKSh(Number(refund.amount))}</span>
+                  </div>
+                ))}
+                {p.isReversed && <div className="text-xs font-semibold text-red-700">Payment reversed; original receipt retained.</div>}
               </div>
 
               <div className="pt-2 border-t border-gray-100">
@@ -595,6 +716,21 @@ export const TenantDetailsPage: React.FC = () => {
           }}
         />
       )}
+
+      {/* Record Deposit Payment Modal */}
+      {isActive && tenancy && tenant && room && (() => {
+        const dep = deposits.find((d) => String(d.tenancyId) === String(tenancy.id));
+        if (!dep) return null;
+        return (
+          <RecordDepositPaymentModal
+            isOpen={isDepositModalOpen}
+            onClose={() => setIsDepositModalOpen(false)}
+            deposit={dep}
+            tenantName={tenant.fullName}
+            roomName={room.name}
+          />
+        );
+      })()}
     </div>
   );
 };

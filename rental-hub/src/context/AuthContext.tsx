@@ -4,8 +4,9 @@
  * user state from GET /api/v1/auth/me/ without storing credentials in JS storage.
  */
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { API_BASE_URL, apiFetch, getCsrfToken } from '../services/api';
+import { AuthContext } from './authContextState';
 
 export interface AuthUser {
   username: string;
@@ -14,7 +15,7 @@ export interface AuthUser {
   lastName: string;
 }
 
-interface AuthContextType {
+export interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   user: AuthUser | null;
@@ -23,8 +24,6 @@ interface AuthContextType {
   error: string | null;
   clearError: () => void;
 }
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -123,10 +122,4 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     </AuthContext.Provider>
   );
 };
-
-export function useAuth(): AuthContextType {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth must be used inside AuthProvider');
-  return ctx;
-}
 

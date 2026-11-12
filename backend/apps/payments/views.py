@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from django.db.models import Q
 from django.db.models import Sum
 from django.db import IntegrityError
+from django.core.exceptions import ValidationError
 from django.conf import settings as django_settings
 from .models import Payment, PaymentAllocation, Deposit, DepositDeduction
 from .serializers import (
@@ -13,14 +14,25 @@ from .serializers import (
     RecordPaymentSerializer,
     DepositSerializer,
     DepositSettlementSerializer,
+    RecordDepositPaymentSerializer,
+    PaymentReversalSerializer,
+    PaymentRefundRequestSerializer,
+    ReservationReleaseSerializer,
 )
+from apps.properties.services import get_active_property_id
+from .services import record_deposit_payment
+from .ledger import payment_available_credit, reverse_payment, create_payment_refund
+from .models import PaymentRefund, PaymentReversal
 
 
 class PaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     serializer_class = PaymentSerializer
 
     def get_queryset(self):
-        qs = Payment.objects.filter(room__property_id=django_settings.RENTALHUB_PROPERTY_ID).select_related('tenant', 'tenancy', 'room', 'charge').prefetch_related('allocations__charge')
+        active_prop_id = get_active_property_id()
+        qs = Payment.objects.all().select_related('tenant', 'tenancy', 'room', 'charge').prefetch_related('allocations__charge', 'reservations', 'refunds')
+        if active_prop_id:
+            qs = qs.filter(room__property_id=active_prop_id)
 
         method = self.request.query_params.get('method')
         if method in ('mpesa', 'cash', 'bank'):
@@ -143,17 +155,83 @@ class PaymentViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.
                 'amount': primary_allocation['amount'] if primary_allocation else float(payment.amount),
             },
             'allocations': allocation_details,
+            'reservations': [
+                {'id': reservation.id, 'month': reservation.month, 'amount': float(reservation.amount),
+                 'remainingAmount': float(reservation.remaining_amount), 'status': reservation.status}
+                for reservation in payment.reservations.order_by('month', 'created_at', 'id')
+            ],
+            'availableCredit': float(payment_available_credit(payment)),
         }
         return Response(receipt_data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], url_path='reverse')
+    def reverse(self, request, pk=None):
+        payment = self.get_object()
+        serializer = PaymentReversalSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            reverse_payment(payment, serializer.validated_data['reason'].strip(), request.user if request.user.is_authenticated else None)
+        except Exception as exc:
+            from django.core.exceptions import ValidationError
+            if isinstance(exc, ValidationError):
+                return Response({'detail': exc.messages}, status=status.HTTP_400_BAD_REQUEST)
+            raise
+        return Response(PaymentSerializer(self.get_queryset().get(pk=payment.pk)).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], url_path='refund')
+    def refund(self, request, pk=None):
+        payment = self.get_object()
+        serializer = PaymentRefundRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            refund = create_payment_refund(
+                payment, **serializer.validated_data,
+                actor=request.user if request.user.is_authenticated else None,
+            )
+        except Exception as exc:
+            from django.core.exceptions import ValidationError
+            if isinstance(exc, ValidationError):
+                return Response({'detail': exc.messages}, status=status.HTTP_400_BAD_REQUEST)
+            raise
+        return Response({
+            'refund': {'id': refund.id, 'paymentId': payment.id, 'amount': refund.amount,
+                       'date': refund.date, 'method': refund.method, 'reference': refund.reference},
+            'availableCredit': payment_available_credit(payment),
+        }, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='release-reservation')
+    def release_reservation(self, request, pk=None):
+        payment = self.get_object()
+        serializer = ReservationReleaseSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        from django.db import transaction
+        with transaction.atomic():
+            locked_payment = Payment.objects.select_for_update().get(pk=payment.pk)
+            from .models import FutureRentReservation
+            reservation = FutureRentReservation.objects.select_for_update().filter(
+                pk=serializer.validated_data['reservationId'], payment=locked_payment,
+            ).first()
+            if not reservation:
+                return Response({'reservationId': 'Reservation does not belong to this payment.'}, status=status.HTTP_400_BAD_REQUEST)
+            if reservation.status != 'reserved':
+                return Response({'detail': 'Only an unapplied reservation can be released.'}, status=status.HTTP_400_BAD_REQUEST)
+            reservation.released_amount += reservation.remaining_amount
+            reservation.status = 'released'
+            reservation.release_reason = serializer.validated_data['reason'].strip()
+            reservation.save(update_fields=['released_amount', 'status', 'release_reason', 'updated_at'])
+        return Response(PaymentSerializer(self.get_queryset().get(pk=payment.pk)).data, status=status.HTTP_200_OK)
 
 
 class DepositViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = DepositSerializer
 
     def get_queryset(self):
-        qs = Deposit.objects.filter(tenancy__room__property_id=django_settings.RENTALHUB_PROPERTY_ID).select_related('tenancy__room', 'tenant').prefetch_related('deductions')
+        active_prop_id = get_active_property_id()
+        qs = Deposit.objects.all().select_related('tenancy__room', 'tenant').prefetch_related('deductions', 'payments')
+        if active_prop_id:
+            qs = qs.filter(tenancy__room__property_id=active_prop_id)
         status_param = self.request.query_params.get('status')
-        if status_param in ('held', 'settled', 'refunded', 'applied'):
+        if status_param in ('unpaid', 'partially_paid', 'held', 'waived', 'settled', 'refunded', 'applied'):
             qs = qs.filter(status=status_param)
 
         tenancy_id = self.request.query_params.get('tenancyId')
@@ -177,7 +255,30 @@ class DepositViewSet(viewsets.ReadOnlyModelViewSet):
                 Q(tenancy__room__name__icontains=search)
             )
 
-        return qs.order_by('-received_date')
+        return qs.order_by('-created_at')
+
+    @action(detail=True, methods=['post'], url_path='record-payment')
+    def record_payment(self, request, pk=None):
+        deposit = self.get_object()
+        serializer = RecordDepositPaymentSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            record_deposit_payment(
+                deposit=deposit,
+                amount=serializer.validated_data['amount'],
+                payment_date=serializer.validated_data['paymentDate'],
+                method=serializer.validated_data['method'],
+                reference=serializer.validated_data.get('reference', ''),
+                notes=serializer.validated_data.get('notes', ''),
+            )
+        except ValidationError as exc:
+            detail = exc.messages if hasattr(exc, 'messages') else str(exc)
+            return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
+
+        deposit.refresh_from_db()
+        return Response(DepositSerializer(deposit).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'], url_path='settle')
     def settle(self, request, pk=None):

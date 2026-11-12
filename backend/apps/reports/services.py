@@ -4,9 +4,10 @@ from django.utils import timezone
 from django.db.models import Sum
 from django.conf import settings as django_settings
 from apps.properties.models import Property, Room
+from apps.properties.services import get_default_property
 from apps.tenants.models import Tenancy
 from apps.rent.models import RentCharge
-from apps.payments.models import Payment
+from apps.payments.models import Payment, PaymentRefund
 from apps.expenses.models import Expense
 
 
@@ -16,7 +17,7 @@ def get_dashboard_metrics(month: str, property_obj: Property = None):
     Reconciles directly against recorded database ledgers.
     """
     if not property_obj:
-        property_obj = Property.objects.filter(pk=django_settings.RENTALHUB_PROPERTY_ID).first()
+        property_obj = get_default_property()
 
     today = timezone.now().date()
     year_str, month_str = month.split('-')
@@ -50,6 +51,9 @@ def get_dashboard_metrics(month: str, property_obj: Property = None):
     total_rent_charged = sum((c.amount for c in charges), Decimal('0.00'))
     total_rent_received = Payment.objects.filter(
         room__property=property_obj, date__year=year, date__month=month_num
+    ).exclude(reversal__isnull=False).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+    total_refunds = PaymentRefund.objects.filter(
+        payment__room__property=property_obj, date__year=year, date__month=month_num
     ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
     total_outstanding = sum((c.balance for c in charges), Decimal('0.00'))
     current_tenants_outstanding = sum(
@@ -72,12 +76,12 @@ def get_dashboard_metrics(month: str, property_obj: Property = None):
         date__month=month_num
     )
     total_expenses = sum((e.amount for e in expenses), Decimal('0.00'))
-    net_cash_income = total_rent_received - total_expenses
+    net_cash_income = total_rent_received - total_refunds - total_expenses
 
     # 4. Overdue charges (Needs Attention)
     overdue_items = []
     for c in charges:
-        if c.balance > Decimal('0.00'):
+        if c.balance > Decimal('0.00') and c.due_date <= today:
             days_overdue = max(0, (today - c.due_date).days) if today > c.due_date else 0
             overdue_items.append({
                 'chargeId': c.id,
@@ -121,6 +125,7 @@ def get_dashboard_metrics(month: str, property_obj: Property = None):
         'propertyName': property_obj.name,
         'totalRentCharged': float(total_rent_charged),
         'totalRentReceived': float(total_rent_received),
+        'totalRefunds': float(total_refunds),
         'totalOutstanding': float(total_outstanding),
         'currentTenantsOutstanding': float(current_tenants_outstanding),
         'formerTenantsOutstanding': float(former_tenants_outstanding),
@@ -147,7 +152,7 @@ def get_monthly_financial_report(month: str, property_obj: Property = None):
     Reconciles cash received against operational expenses and ledger balances.
     """
     if not property_obj:
-        property_obj = Property.objects.filter(pk=django_settings.RENTALHUB_PROPERTY_ID).first()
+        property_obj = get_default_property()
 
     today = timezone.now().date()
     year_str, month_str = month.split('-')
@@ -169,6 +174,9 @@ def get_monthly_financial_report(month: str, property_obj: Property = None):
     rent_charged = sum((c.amount for c in charges), Decimal('0.00'))
     rent_received = Payment.objects.filter(
         room__property=property_obj, date__year=year, date__month=month_num
+    ).exclude(reversal__isnull=False).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+    rent_refunded = PaymentRefund.objects.filter(
+        payment__room__property=property_obj, date__year=year, date__month=month_num
     ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
     outstanding_rent = sum((c.balance for c in charges), Decimal('0.00'))
     current_tenants_outstanding = sum(
@@ -191,7 +199,7 @@ def get_monthly_financial_report(month: str, property_obj: Property = None):
     ).order_by('-date', '-created_at')
 
     total_expenses = sum((e.amount for e in expenses), Decimal('0.00'))
-    net_cash_income = rent_received - total_expenses
+    net_cash_income = rent_received - rent_refunded - total_expenses
 
     # Categories breakdown
     categories = {'maintenance': Decimal('0.00'), 'utilities': Decimal('0.00'), 'cleaning': Decimal('0.00')}
@@ -212,7 +220,7 @@ def get_monthly_financial_report(month: str, property_obj: Property = None):
     # 4. Outstanding & Overdue list
     overdue_items = []
     for c in charges:
-        if c.balance > Decimal('0.00'):
+        if c.balance > Decimal('0.00') and c.due_date <= today:
             days_overdue = max(0, (today - c.due_date).days) if today > c.due_date else 0
             overdue_items.append({
                 'id': c.id,
@@ -240,6 +248,7 @@ def get_monthly_financial_report(month: str, property_obj: Property = None):
         'summary': {
             'rentCharged': float(rent_charged),
             'rentReceived': float(rent_received),
+            'rentRefunded': float(rent_refunded),
             'outstandingRent': float(outstanding_rent),
             'currentTenantsOutstanding': float(current_tenants_outstanding),
             'formerTenantsOutstanding': float(former_tenants_outstanding),
@@ -253,6 +262,7 @@ def get_monthly_financial_report(month: str, property_obj: Property = None):
         },
         'cashMovement': {
             'rentReceived': float(rent_received),
+            'rentRefunded': float(rent_refunded),
             'expenses': float(total_expenses),
             'netCashIncome': float(net_cash_income),
         },

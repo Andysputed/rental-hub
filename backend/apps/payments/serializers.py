@@ -4,9 +4,14 @@ from django.db import models, transaction
 from django.utils import timezone
 from django.conf import settings as django_settings
 from apps.properties.models import Room
+from apps.properties.services import get_active_property_id
 from apps.tenants.models import Tenant, Tenancy
 from apps.rent.models import RentCharge
-from .models import Payment, PaymentAllocation, Deposit, DepositDeduction, ReceiptSequence
+from .models import (
+    Payment, PaymentAllocation, Deposit, DepositPayment, DepositDeduction, ReceiptSequence,
+    FutureRentReservation, PaymentRefund, PaymentReversal,
+)
+from .ledger import payment_available_credit, reverse_payment, create_payment_refund, reconcile_tenancy_advance_credit
 
 
 class PaymentAllocationSerializer(serializers.ModelSerializer):
@@ -18,6 +23,21 @@ class PaymentAllocationSerializer(serializers.ModelSerializer):
         fields = ['id', 'chargeId', 'chargeMonth', 'amount', 'created_at']
 
 
+class FutureRentReservationSerializer(serializers.ModelSerializer):
+    remainingAmount = serializers.DecimalField(source='remaining_amount', max_digits=12, decimal_places=2, read_only=True)
+    chargeId = serializers.IntegerField(source='charge_id', allow_null=True, read_only=True)
+
+    class Meta:
+        model = FutureRentReservation
+        fields = ['id', 'month', 'amount', 'applied_amount', 'released_amount', 'remainingAmount', 'status', 'chargeId', 'created_at']
+
+
+class PaymentRefundSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PaymentRefund
+        fields = ['id', 'amount', 'date', 'method', 'reference', 'reason', 'created_at']
+
+
 class PaymentSerializer(serializers.ModelSerializer):
     receiptNumber = serializers.CharField(source='receipt_number')
     tenantId = serializers.IntegerField(source='tenant.id', read_only=True)
@@ -27,6 +47,10 @@ class PaymentSerializer(serializers.ModelSerializer):
     roomName = serializers.CharField(source='room.name', read_only=True)
     chargeId = serializers.IntegerField(source='charge.id', allow_null=True, read_only=True)
     allocations = PaymentAllocationSerializer(many=True, read_only=True)
+    reservations = FutureRentReservationSerializer(many=True, read_only=True)
+    refunds = PaymentRefundSerializer(many=True, read_only=True)
+    availableCredit = serializers.SerializerMethodField()
+    isReversed = serializers.SerializerMethodField()
 
     class Meta:
         model = Payment
@@ -45,9 +69,29 @@ class PaymentSerializer(serializers.ModelSerializer):
             'reference',
             'notes',
             'allocations',
+            'reservations',
+            'refunds',
+            'availableCredit',
+            'isReversed',
             'created_at',
             'updated_at',
         ]
+
+    def get_availableCredit(self, obj):
+        return payment_available_credit(obj)
+
+    def get_isReversed(self, obj):
+        return hasattr(obj, 'reversal')
+
+
+class RequestedAllocationSerializer(serializers.Serializer):
+    chargeId = serializers.IntegerField()
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal('0.01'))
+
+
+class RequestedReservationSerializer(serializers.Serializer):
+    month = serializers.RegexField(r'^\d{4}-(0[1-9]|1[0-2])$')
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal('0.01'))
 
 
 class RecordPaymentSerializer(serializers.Serializer):
@@ -58,6 +102,9 @@ class RecordPaymentSerializer(serializers.Serializer):
     reference = serializers.CharField(max_length=100, required=True)
     paymentDate = serializers.DateField(required=True)
     chargeId = serializers.IntegerField(required=False, allow_null=True)
+    allocationMode = serializers.ChoiceField(choices=['automatic', 'manual'], default='automatic')
+    allocations = RequestedAllocationSerializer(many=True, required=False, default=list)
+    reservations = RequestedReservationSerializer(many=True, required=False, default=list)
     notes = serializers.CharField(required=False, allow_blank=True, default='')
 
     def validate_reference(self, value):
@@ -68,8 +115,12 @@ class RecordPaymentSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         room_id = attrs.get('roomId')
+        active_prop_id = get_active_property_id()
         try:
-            room = Room.objects.get(id=room_id, property_id=django_settings.RENTALHUB_PROPERTY_ID)
+            if active_prop_id:
+                room = Room.objects.get(id=room_id, property_id=active_prop_id)
+            else:
+                room = Room.objects.get(id=room_id)
         except Room.DoesNotExist:
             raise serializers.ValidationError({"roomId": "Room does not exist."})
 
@@ -83,6 +134,14 @@ class RecordPaymentSerializer(serializers.Serializer):
             if not active_tenancy:
                 raise serializers.ValidationError({"roomId": f"{room.name} does not have an active tenancy."})
 
+        if attrs.get('allocationMode') == 'manual':
+            if attrs.get('chargeId'):
+                raise serializers.ValidationError({'chargeId': 'Use allocations when manual allocation is selected.'})
+            months = [item['month'] for item in attrs.get('reservations', [])]
+            if len(months) != len(set(months)):
+                raise serializers.ValidationError({'reservations': 'Only one reservation per rent month is allowed.'})
+        elif attrs.get('allocations') or attrs.get('reservations'):
+            raise serializers.ValidationError({'allocationMode': 'Select manual mode to provide allocations or reservations.'})
         return attrs
 
     def create(self, validated_data):
@@ -94,6 +153,9 @@ class RecordPaymentSerializer(serializers.Serializer):
         payment_date = validated_data['paymentDate']
         charge_id = validated_data.get('chargeId')
         notes = validated_data.get('notes', '')
+        mode = validated_data.get('allocationMode', 'automatic')
+        requested_allocations = validated_data.get('allocations', [])
+        requested_reservations = validated_data.get('reservations', [])
 
         with transaction.atomic():
             room = Room.objects.select_for_update().get(id=room_id)
@@ -103,57 +165,77 @@ class RecordPaymentSerializer(serializers.Serializer):
                 tenancy = room.get_current_tenancy()
                 if not tenancy:
                     raise serializers.ValidationError({"roomId": f"{room.name} does not have an active tenancy."})
+                tenancy = Tenancy.objects.select_for_update().get(pk=tenancy.pk)
+            # All payment writers for a tenancy serialize on this row. This keeps
+            # charge capacity and a receipt's allocatable funds from racing.
+            tenancy = Tenancy.objects.select_for_update().get(pk=tenancy.pk)
             tenant = tenancy.tenant
 
-            # Determine primary charge to apply payment to
+            start_month = tenancy.start_date.strftime('%Y-%m')
+            end_month = tenancy.end_date.strftime('%Y-%m') if tenancy.end_date else None
             primary_charge = None
             if charge_id:
                 try:
                     primary_charge = RentCharge.objects.select_for_update().get(id=charge_id, tenancy=tenancy)
                 except RentCharge.DoesNotExist:
                     raise serializers.ValidationError({"chargeId": "Specified rent charge does not belong to this tenancy."})
-            else:
-                # Find current month charge or oldest unpaid charge for this tenancy
-                payment_month = payment_date.strftime('%Y-%m')
-                primary_charge = RentCharge.objects.select_for_update().filter(
+                if primary_charge.month < start_month or (tenancy.end_date and primary_charge.month > tenancy.end_date.strftime('%Y-%m')):
+                    raise serializers.ValidationError({'chargeId': 'Selected rent period is outside this tenancy.'})
+
+            candidate_charges = list(RentCharge.objects.select_for_update().filter(
+                tenancy=tenancy,
+                month__gte=start_month,
+                paid_amount__lt=models.F('amount'),
+            ).order_by('month', 'due_date', 'id'))
+            if end_month:
+                candidate_charges = [charge for charge in candidate_charges if charge.month <= end_month]
+            if primary_charge and primary_charge.balance > 0:
+                candidate_charges = [primary_charge] + [c for c in candidate_charges if c.id != primary_charge.id]
+
+            selected = []
+            if mode == 'manual':
+                seen_ids = set()
+                for item in requested_allocations:
+                    if item['chargeId'] in seen_ids:
+                        raise serializers.ValidationError({'allocations': 'A rent charge may only be selected once.'})
+                    seen_ids.add(item['chargeId'])
+                    charge = RentCharge.objects.select_for_update().filter(
+                        pk=item['chargeId'], tenancy=tenancy
+                    ).first()
+                    if not charge:
+                        raise serializers.ValidationError({'allocations': 'Every selected charge must belong to this tenancy.'})
+                    if charge.month < start_month or (end_month and charge.month > end_month):
+                        raise serializers.ValidationError({'allocations': 'Selected rent period is outside this tenancy.'})
+                    if item['amount'] > charge.balance:
+                        raise serializers.ValidationError({'allocations': f'{charge.month} allocation exceeds its outstanding balance.'})
+                    selected.append((charge, item['amount']))
+                has_charge_months = set(RentCharge.objects.filter(
                     tenancy=tenancy,
-                    month=payment_month
-                ).first()
-
-                if not primary_charge:
-                    # Look for oldest charge with outstanding balance
-                    primary_charge = RentCharge.objects.select_for_update().filter(
-                        tenancy=tenancy
-                    ).exclude(status='paid').order_by('month').first()
-
-                if not primary_charge:
-                    # If still no charge, create one for this month
-                    primary_charge = RentCharge.objects.create(
-                        tenancy=tenancy,
-                        room=room,
-                        month=payment_month,
-                        due_date=payment_date,
-                        amount=tenancy.monthly_rent,
-                        paid_amount=Decimal('0.00'),
-                        status='unpaid'
-                    )
-
-            # Candidate charges for allocation: primary charge first, then other unpaid charges
-            candidate_charges = [primary_charge]
-            other_unpaid = list(
-                RentCharge.objects.select_for_update()
-                .filter(tenancy=tenancy)
-                .exclude(id=primary_charge.id)
-                .filter(paid_amount__lt=models.F('amount'))
-                .order_by('month', 'due_date')
-            )
-            candidate_charges.extend(other_unpaid)
-
-            total_available_due = sum((c.balance for c in candidate_charges), Decimal('0.00'))
-            if amount > total_available_due:
-                raise serializers.ValidationError({
-                    "amount": f"Payment amount ({amount} KES) exceeds the total outstanding rent charges ({total_available_due} KES) for this tenancy."
-                })
+                    month__in=[r['month'] for r in requested_reservations],
+                ).values_list('month', flat=True))
+                if has_charge_months:
+                    raise serializers.ValidationError({'reservations': 'A charge already exists for a selected month; allocate to that charge instead.'})
+                for item in requested_reservations:
+                    if item['month'] < start_month:
+                        raise serializers.ValidationError({'reservations': 'A reservation cannot predate move-in.'})
+                    if item['month'] < timezone.now().strftime('%Y-%m'):
+                        raise serializers.ValidationError({'reservations': 'A reservation must be for the current or a future rent period.'})
+                    if end_month and item['month'] > end_month:
+                        raise serializers.ValidationError({'reservations': 'A reservation cannot fall after the tenancy end date.'})
+                selected_total = sum((a for _, a in selected), Decimal('0.00')) + sum(
+                    (item['amount'] for item in requested_reservations), Decimal('0.00')
+                )
+                if selected_total > amount:
+                    raise serializers.ValidationError({'amount': 'Allocations and reservations cannot exceed the payment amount.'})
+            else:
+                remaining = amount
+                for charge in candidate_charges:
+                    if remaining <= 0:
+                        break
+                    alloc = min(charge.balance, remaining)
+                    if alloc > 0:
+                        selected.append((charge, alloc))
+                        remaining -= alloc
 
             # The counter row serializes issuers for a year. Both the increment and
             # payment roll back together if creation/allocation fails.
@@ -180,18 +262,12 @@ class RecordPaymentSerializer(serializers.Serializer):
                 date=payment_date,
                 method=method,
                 reference=reference,
-                notes=notes
+                notes=notes,
             )
 
-            # Allocate payment strictly up to each charge's permissible balance
-            remaining_payment = amount
-            for c in candidate_charges:
-                if remaining_payment <= Decimal('0.00'):
-                    break
-                charge_balance = c.balance
-                if charge_balance <= Decimal('0.00'):
-                    continue
-                alloc_amount = min(charge_balance, remaining_payment)
+            payment.charge = selected[0][0] if selected else None
+            payment.save(update_fields=['charge'])
+            for c, alloc_amount in selected:
                 PaymentAllocation.objects.create(
                     payment=payment,
                     charge=c,
@@ -200,7 +276,20 @@ class RecordPaymentSerializer(serializers.Serializer):
                 c.paid_amount += alloc_amount
                 c.update_status()
                 c.save()
-                remaining_payment -= alloc_amount
+            if mode == 'manual':
+                for item in requested_reservations:
+                    FutureRentReservation.objects.create(
+                        payment=payment, tenancy=tenancy, month=item['month'],
+                        amount=item['amount'], status='reserved',
+                    )
+
+            # Reconcile any remaining available advance credit against any outstanding unpaid charges
+            reconcile_tenancy_advance_credit(tenancy)
+            if not payment.charge:
+                first_alloc = payment.allocations.first()
+                if first_alloc:
+                    payment.charge = first_alloc.charge
+                    payment.save(update_fields=['charge'])
 
         return payment
 
@@ -235,6 +324,32 @@ class DepositDeductionSerializer(serializers.ModelSerializer):
         ]
 
 
+class DepositPaymentSerializer(serializers.ModelSerializer):
+    depositId = serializers.PrimaryKeyRelatedField(source='deposit', read_only=True)
+    paymentDate = serializers.DateField(source='payment_date')
+
+    class Meta:
+        model = DepositPayment
+        fields = [
+            'id',
+            'depositId',
+            'amount',
+            'paymentDate',
+            'method',
+            'reference',
+            'notes',
+            'created_at',
+        ]
+
+
+class RecordDepositPaymentSerializer(serializers.Serializer):
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal('0.01'), required=True)
+    paymentDate = serializers.DateField(required=True)
+    method = serializers.ChoiceField(choices=['mpesa', 'cash', 'bank'], default='mpesa')
+    reference = serializers.CharField(max_length=100, required=False, allow_blank=True, default='')
+    notes = serializers.CharField(required=False, allow_blank=True, default='')
+
+
 class DepositSerializer(serializers.ModelSerializer):
     tenancyId = serializers.PrimaryKeyRelatedField(source='tenancy', read_only=True)
     tenantId = serializers.IntegerField(source='tenant.id', read_only=True)
@@ -243,7 +358,14 @@ class DepositSerializer(serializers.ModelSerializer):
     roomId = serializers.IntegerField(source='tenancy.room.id', read_only=True)
     roomName = serializers.CharField(source='tenancy.room.name', read_only=True)
     roomNumber = serializers.CharField(source='tenancy.room.number', read_only=True)
-    receivedDate = serializers.DateField(source='received_date')
+    requiredAmount = serializers.DecimalField(source='required_amount', max_digits=12, decimal_places=2)
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2)
+    totalPaid = serializers.DecimalField(source='total_paid', max_digits=12, decimal_places=2, read_only=True)
+    outstandingBalance = serializers.DecimalField(source='outstanding_balance', max_digits=12, decimal_places=2, read_only=True)
+    receivedDate = serializers.DateField(source='received_date', allow_null=True)
+    isWaived = serializers.BooleanField(source='is_waived')
+    waivedReason = serializers.CharField(source='waived_reason')
+    waivedAt = serializers.DateTimeField(source='waived_at', allow_null=True)
     rentDeducted = serializers.DecimalField(source='rent_deducted', max_digits=12, decimal_places=2)
     repairsDeducted = serializers.DecimalField(source='repairs_deducted', max_digits=12, decimal_places=2)
     totalDeductions = serializers.DecimalField(source='total_deductions', max_digits=12, decimal_places=2, read_only=True)
@@ -255,6 +377,7 @@ class DepositSerializer(serializers.ModelSerializer):
     settledAt = serializers.DateTimeField(source='settled_at', allow_null=True)
     settlementNotes = serializers.CharField(source='settlement_notes')
     deductions = DepositDeductionSerializer(many=True, read_only=True)
+    payments = DepositPaymentSerializer(many=True, read_only=True)
 
     class Meta:
         model = Deposit
@@ -267,7 +390,13 @@ class DepositSerializer(serializers.ModelSerializer):
             'roomId',
             'roomName',
             'roomNumber',
+            'requiredAmount',
             'amount',
+            'totalPaid',
+            'outstandingBalance',
+            'isWaived',
+            'waivedReason',
+            'waivedAt',
             'receivedDate',
             'received_date',
             'status',
@@ -284,6 +413,7 @@ class DepositSerializer(serializers.ModelSerializer):
             'settledAt',
             'settlementNotes',
             'deductions',
+            'payments',
             'created_at',
             'updated_at',
         ]
@@ -336,6 +466,13 @@ class DepositSettlementSerializer(serializers.Serializer):
         if deposit.tenancy_id != tenancy.id:
             raise serializers.ValidationError({"deposit": "Deposit does not belong to the specified tenancy."})
 
+        if deposit.is_waived:
+            rent_ded = attrs.get('rentDeduction', Decimal('0.00'))
+            repairs_ded = attrs.get('repairDeductions', [])
+            refund_amt = attrs.get('refundAmount', Decimal('0.00'))
+            if rent_ded > Decimal('0.00') or len(repairs_ded) > 0 or refund_amt > Decimal('0.00'):
+                raise serializers.ValidationError({"deposit": "Cannot record deductions or refunds for a waived deposit."})
+
         if deposit.status in ('settled', 'refunded', 'applied'):
             raise serializers.ValidationError({"deposit": f"Deposit #{deposit.id} has already been settled and cannot be settled again."})
 
@@ -344,7 +481,14 @@ class DepositSettlementSerializer(serializers.Serializer):
             raise serializers.ValidationError({"endDate": f"Move-out date cannot be before move-in date ({tenancy.start_date})."})
 
         rent_deduction = attrs.get('rentDeduction', Decimal('0.00'))
-        unpaid_charges = list(RentCharge.objects.filter(tenancy=tenancy, paid_amount__lt=models.F('amount')).order_by('month', 'due_date'))
+        arrears_as_of = end_date or timezone.localdate()
+        unpaid_charges = list(RentCharge.objects.filter(
+            tenancy=tenancy,
+            paid_amount__lt=models.F('amount'),
+            due_date__lte=arrears_as_of,
+            month__gte=tenancy.start_date.strftime('%Y-%m'),
+            month__lte=arrears_as_of.strftime('%Y-%m'),
+        ).order_by('month', 'due_date'))
         total_eligible_arrears = sum((c.balance for c in unpaid_charges), Decimal('0.00'))
 
         if rent_deduction > total_eligible_arrears:
@@ -397,8 +541,13 @@ class DepositSettlementSerializer(serializers.Serializer):
             rent_deduction = validated_data['rentDeduction']
             repair_deductions = validated_data.get('repairDeductions', [])
             refund_amount = validated_data['refundAmount']
+            arrears_as_of = validated_data.get('endDate') or timezone.localdate()
             unpaid_charges = list(RentCharge.objects.select_for_update().filter(
-                tenancy=tenancy, paid_amount__lt=models.F('amount')
+                tenancy=tenancy,
+                paid_amount__lt=models.F('amount'),
+                due_date__lte=arrears_as_of,
+                month__gte=tenancy.start_date.strftime('%Y-%m'),
+                month__lte=arrears_as_of.strftime('%Y-%m'),
             ).order_by('month', 'due_date'))
             current_arrears = sum((charge.balance for charge in unpaid_charges), Decimal('0.00'))
             total_repairs = sum((item['amount'] for item in repair_deductions), Decimal('0.00'))
@@ -478,3 +627,26 @@ class DepositSettlementSerializer(serializers.Serializer):
                 room.save()
 
         return deposit
+
+
+class PaymentReversalSerializer(serializers.Serializer):
+    reason = serializers.CharField(min_length=5, max_length=1000)
+
+
+class PaymentRefundRequestSerializer(serializers.Serializer):
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal('0.01'))
+    date = serializers.DateField()
+    method = serializers.ChoiceField(choices=['mpesa', 'cash', 'bank'])
+    reference = serializers.CharField(max_length=100)
+    reason = serializers.CharField(min_length=3, max_length=1000)
+
+    def validate_reference(self, value):
+        value = value.strip()
+        if PaymentRefund.objects.filter(reference=value).exists():
+            raise serializers.ValidationError('This refund reference has already been recorded.')
+        return value
+
+
+class ReservationReleaseSerializer(serializers.Serializer):
+    reservationId = serializers.IntegerField()
+    reason = serializers.CharField(min_length=3, max_length=1000)

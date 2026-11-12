@@ -11,15 +11,15 @@ import {
   ChevronRight,
   ArrowLeft,
 } from 'lucide-react';
-import { useRental } from '../../context/RentalContext';
-import { tenanciesApi } from '../../services/api';
+import { useRental } from '../../context/useRental';
+import { tenanciesApi, getApiErrorDetail } from '../../services/api';
 import { formatKSh, formatDateShort } from '../../utils/format';
-import type { SettlementSummary, Deposit, PaymentMethod } from '../../types';
+import type { SettlementSummary, Deposit, PaymentMethod, MoveOutRequest } from '../../types';
 
 interface MoveOutModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm?: (tenancyId: string, data: { endDate: string; notes?: string }) => Promise<void>;
+  onConfirm?: (tenancyId: string, data: MoveOutRequest) => Promise<void>;
   onSettled?: (deposit: Deposit) => void;
   tenancy: {
     id: string;
@@ -69,9 +69,12 @@ export const MoveOutModal: React.FC<MoveOutModalProps> = ({
     if (!isOpen || !tenancy.id) return;
 
     let isMounted = true;
-    setIsLoadingSummary(true);
-    setError(null);
-    setStep('form');
+    queueMicrotask(() => {
+      if (!isMounted) return;
+      setIsLoadingSummary(true);
+      setError(null);
+      setStep('form');
+    });
 
     tenanciesApi
       .getSettlementSummary(tenancy.id)
@@ -129,7 +132,7 @@ export const MoveOutModal: React.FC<MoveOutModalProps> = ({
     setRepairDeductions([...repairDeductions, newItem]);
   };
 
-  const handleUpdateRepair = (id: string, field: keyof RepairItem, val: any) => {
+  const handleUpdateRepair = <K extends keyof RepairItem>(id: string, field: K, val: RepairItem[K]) => {
     const updated = repairDeductions.map((item) => {
       if (item.id === id) {
         return { ...item, [field]: val };
@@ -247,9 +250,9 @@ export const MoveOutModal: React.FC<MoveOutModalProps> = ({
       setTimeout(() => {
         onClose();
       }, 1200);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Move out & settlement error:', err);
-      setError(err?.data?.deposit || err?.data?.totalDeductions || err?.data?.rentDeduction || err?.message || 'Failed to complete move-out settlement.');
+      setError(getApiErrorDetail(err, ['deposit', 'totalDeductions', 'rentDeduction'], 'Failed to complete move-out settlement.'));
       setStep('form');
     } finally {
       setIsSubmitting(false);
@@ -424,7 +427,7 @@ export const MoveOutModal: React.FC<MoveOutModalProps> = ({
                           <div className="grid grid-cols-2 gap-2 text-xs">
                             <select
                               value={item.category}
-                              onChange={(e) => handleUpdateRepair(item.id, 'category', e.target.value as any)}
+                              onChange={(e) => handleUpdateRepair(item.id, 'category', e.target.value as RepairItem['category'])}
                               className="px-2 py-1.5 rounded-lg border border-gray-300 bg-white text-xs text-gray-700 focus:outline-none"
                             >
                               <option value="repair">Damage / Repair</option>

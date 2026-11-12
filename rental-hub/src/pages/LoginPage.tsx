@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Home, Eye, EyeOff, LogIn, AlertCircle } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
+import { getErrorMessage } from '../services/api';
 import { Link } from 'react-router-dom';
 
 export const LoginPage: React.FC = () => {
@@ -21,8 +22,8 @@ export const LoginPage: React.FC = () => {
     try {
       await login(username.trim(), password);
       // Redirect handled by App.tsx route guard — no navigate() needed here
-    } catch (err: any) {
-      setError(err?.message || 'Login failed. Please try again.');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Login failed. Please try again.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -38,7 +39,7 @@ export const LoginPage: React.FC = () => {
           </div>
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-gray-900">RentalHub</h1>
-            <p className="text-sm text-gray-500 mt-0.5">Acacia House · Landlord login</p>
+            <p className="text-sm text-gray-500 mt-0.5">Kimumu Rentals · Landlord login</p>
           </div>
         </div>
 
@@ -126,7 +127,7 @@ export const LoginPage: React.FC = () => {
         </div>
 
         <p className="text-center text-[11px] text-gray-400">
-          RentalHub · Single-landlord property management · Nairobi, Kenya
+          RentalHub · Single-landlord property management · Eldoret, Kenya
         </p>
       </div>
     </div>

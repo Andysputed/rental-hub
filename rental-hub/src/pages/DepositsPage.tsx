@@ -6,7 +6,7 @@ import {
   ChevronUp,
   LogOut,
 } from 'lucide-react';
-import { useRental } from '../context/RentalContext';
+import { useRental } from '../context/useRental';
 import { Badge } from '../components/common/Badge';
 import { MoveOutModal } from '../components/common/MoveOutModal';
 import { formatKSh, formatDateShort } from '../utils/format';

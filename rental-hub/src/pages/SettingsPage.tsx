@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Check, Lock, Calendar, ArrowRight, CheckCircle2 } from 'lucide-react';
-import { useRental } from '../context/RentalContext';
+import { useRental } from '../context/useRental';
+import { getErrorMessage } from '../services/api';
 import { Badge } from '../components/common/Badge';
 import { formatMonthYear } from '../utils/format';
 
@@ -38,8 +39,8 @@ export const SettingsPage: React.FC = () => {
       });
       setSavedMessage('Settings saved successfully');
       setTimeout(() => setSavedMessage(null), 3000);
-    } catch (err: any) {
-      setSavedMessage(err?.message || 'Failed to save settings');
+    } catch (err: unknown) {
+      setSavedMessage(getErrorMessage(err, 'Failed to save settings'));
       setTimeout(() => setSavedMessage(null), 4000);
     }
   };
@@ -49,8 +50,8 @@ export const SettingsPage: React.FC = () => {
       await generateMonthlyCharges(selectedMonth);
       setSavedMessage(`Monthly charges verified for ${selectedMonth}.`);
       setTimeout(() => setSavedMessage(null), 3000);
-    } catch (err: any) {
-      setSavedMessage(err?.message || 'Failed to generate charges');
+    } catch (err: unknown) {
+      setSavedMessage(getErrorMessage(err, 'Failed to generate charges'));
       setTimeout(() => setSavedMessage(null), 4000);
     }
   };

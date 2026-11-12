@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, ArrowRight, AlertCircle, ArrowDownLeft, FileText } from 'lucide-react';
-import { useRental } from '../context/RentalContext';
+import { useRental } from '../context/useRental';
 import { MonthSelector } from '../components/common/MonthSelector';
 import { RoomBadge } from '../components/common/RoomBadge';
 import { formatKSh, formatDateShort, formatMonthYear, formatMonthShort } from '../utils/format';
@@ -41,7 +41,7 @@ export const DashboardPage: React.FC = () => {
             <span className="hidden md:inline">A clear view of your property</span>
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            <span className="md:hidden">{settings.propertyName}, Nairobi · {formatMonthYear(selectedMonth)}</span>
+            <span className="md:hidden">{settings.propertyName}, {settings.location} · {formatMonthYear(selectedMonth)}</span>
             <span className="hidden md:inline">{formatMonthYear(selectedMonth)} rent, rooms and cash flow — all in one place.</span>
           </p>
         </div>
@@ -60,7 +60,7 @@ export const DashboardPage: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <MonthSelector currentMonth={selectedMonth} onChange={setSelectedMonth} className="w-full sm:w-64" />
         <span className="hidden md:inline text-xs text-gray-500 font-medium">
-          {settings.propertyName}, Nairobi · 6 rooms · KES
+          {settings.propertyName} · {settings.location} · {rooms.length} rooms · KES
         </span>
       </div>
 

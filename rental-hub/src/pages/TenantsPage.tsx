@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UserPlus, ChevronRight, Phone, Mail, LogOut, Search } from 'lucide-react';
-import { useRental } from '../context/RentalContext';
+import { useRental } from '../context/useRental';
 import { Badge } from '../components/common/Badge';
 import { MoveOutModal } from '../components/common/MoveOutModal';
 import { MonthSelector } from '../components/common/MonthSelector';
@@ -141,10 +141,15 @@ export const TenantsPage: React.FC = () => {
           );
           const tenancy = activeTenancy || historicalTenancy;
           const room = rooms.find((r) => String(r.id) === String(tenancy?.roomId));
-          const charge = tenancy
+          const charge = tenancy && selectedMonth >= tenancy.startDate.slice(0, 7) &&
+            (!tenancy.endDate || selectedMonth <= tenancy.endDate.slice(0, 7))
             ? rentCharges.find((c) => String(c.tenancyId) === String(tenancy.id) && c.month === selectedMonth)
             : undefined;
           const balance = charge ? charge.amount - charge.paidAmount : 0;
+          const now = new Date();
+          const today = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
+          const isPastDue = !!charge && charge.dueDate <= today && balance > 0;
+          const isUpcoming = !!charge && charge.dueDate > today && balance > 0;
           const isActive = !!activeTenancy;
 
           return (
@@ -167,12 +172,12 @@ export const TenantsPage: React.FC = () => {
                     </div>
                   </div>
                   {isActive ? (
-                    <Badge variant={balance > 0 ? 'overdue' : 'paid'}>
-                      {balance > 0 ? `Overdue ${formatKSh(balance)}` : 'Paid'}
+                    <Badge variant={isPastDue ? 'overdue' : 'paid'}>
+                      {isPastDue ? ('Overdue ' + formatKSh(balance)) : isUpcoming ? ('Due ' + formatKSh(balance)) : balance > 0 ? ('Balance ' + formatKSh(balance)) : 'Paid'}
                     </Badge>
                   ) : (
-                    <Badge variant={balance > 0 ? 'overdue' : 'former'}>
-                      {balance > 0 ? `Arrears ${formatKSh(balance)}` : 'Former tenant'}
+                    <Badge variant={isPastDue ? 'overdue' : 'former'}>
+                      {isPastDue ? ('Arrears ' + formatKSh(balance)) : isUpcoming ? ('Due ' + formatKSh(balance)) : balance > 0 ? ('Balance ' + formatKSh(balance)) : 'Former tenant'}
                     </Badge>
                   )}
                 </div>

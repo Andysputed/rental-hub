@@ -16,8 +16,8 @@ import {
   ShieldCheck,
   LogOut,
 } from 'lucide-react';
-import { useRental } from '../../context/RentalContext';
-import { useAuth } from '../../context/AuthContext';
+import { useRental } from '../../context/useRental';
+import { useAuth } from '../../context/useAuth';
 
 export const AppShell: React.FC = () => {
   const { settings } = useRental();

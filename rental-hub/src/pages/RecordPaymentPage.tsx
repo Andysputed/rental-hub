@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Check, Smartphone, Banknote, Building2, Info } from 'lucide-react';
-import { useRental } from '../context/RentalContext';
+import { useRental } from '../context/useRental';
 import { formatKSh, formatMonthYear, formatMonthShort } from '../utils/format';
 import type { PaymentMethod } from '../types';
+import { getErrorMessage } from '../services/api';
 
 export const RecordPaymentPage: React.FC = () => {
   const navigate = useNavigate();
@@ -17,9 +18,15 @@ export const RecordPaymentPage: React.FC = () => {
   const [paymentDate, setPaymentDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [allocationMode, setAllocationMode] = useState<'automatic' | 'manual'>('automatic');
+  const [manualAllocations, setManualAllocations] = useState<Array<{ chargeId: string; amount: string }>>([]);
+  const [reservations, setReservations] = useState<Array<{ month: string; amount: string }>>([]);
 
   // Synchronize room selection when rooms or query params are available
   useEffect(() => {
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
     if (rooms.length === 0) return;
 
     const queryRoomId = searchParams.get('roomId');
@@ -57,7 +64,9 @@ export const RecordPaymentPage: React.FC = () => {
         setAmount(t.monthlyRent || 10000);
       }
     }
-  }, [rooms, searchParams, tenancies, rentCharges, selectedMonth]);
+    });
+    return () => { active = false; };
+  }, [rooms, searchParams, tenancies, rentCharges, selectedMonth, selectedRoomId]);
 
   const selectedTenancy = tenancies.find((t) => String(t.roomId) === String(selectedRoomId) && t.status === 'active');
   const selectedTenant = selectedTenancy ? tenants.find((t) => String(t.id) === String(selectedTenancy.tenantId)) : undefined;
@@ -68,6 +77,17 @@ export const RecordPaymentPage: React.FC = () => {
   const totalChargeAmount = currentCharge ? currentCharge.amount : (selectedTenancy?.monthlyRent || 10000);
   const balanceBefore = currentCharge ? totalChargeAmount - currentCharge.paidAmount : totalChargeAmount;
   const remainingBalance = Math.max(0, balanceBefore - (Number(amount) || 0));
+  const eligibleCharges = selectedTenancy
+    ? rentCharges.filter((charge) =>
+      String(charge.tenancyId) === String(selectedTenancy.id) &&
+      charge.month >= selectedTenancy.startDate.slice(0, 7) &&
+      Number(charge.amount) > Number(charge.paidAmount)
+    ).sort((a, b) => a.month.localeCompare(b.month))
+    : [];
+  const manuallyDirected = manualAllocations.reduce((sum, item) => sum + (Number(item.amount) || 0), 0) +
+    reservations.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const outstandingEligible = eligibleCharges.reduce((sum, charge) => sum + Number(charge.amount) - Number(charge.paidAmount), 0);
+  const previewCredit = Math.max(0, (Number(amount) || 0) - (allocationMode === 'manual' ? manuallyDirected : Math.min(Number(amount) || 0, outstandingEligible)));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,6 +103,10 @@ export const RecordPaymentPage: React.FC = () => {
       setError('Please enter a payment reference code');
       return;
     }
+    if (allocationMode === 'manual' && manuallyDirected > Number(amount)) {
+      setError('Selected allocations and reservations exceed the payment amount.');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -90,16 +114,22 @@ export const RecordPaymentPage: React.FC = () => {
         tenantId: selectedTenant.id,
         tenancyId: selectedTenancy.id,
         roomId: selectedRoomId,
-        chargeId: currentCharge?.id,
         amount: Number(amount),
         date: paymentDate,
         method,
         reference: reference.trim(),
+        allocationMode,
+        allocations: allocationMode === 'manual'
+          ? manualAllocations.filter((item) => Number(item.amount) > 0)
+          : undefined,
+        reservations: allocationMode === 'manual'
+          ? reservations.filter((item) => Number(item.amount) > 0)
+          : undefined,
       });
 
       navigate(`/payments/receipt/${newPayment.id}`);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to record payment');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to record payment'));
     } finally {
       setIsSubmitting(false);
     }
@@ -293,6 +323,130 @@ export const RecordPaymentPage: React.FC = () => {
             onChange={(e) => setPaymentDate(e.target.value)}
             className="w-full px-3.5 py-2.5 rounded-xl border border-[#E5E7EB] bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-700/20 focus:border-brand-700"
           />
+        </div>
+
+        {/* Hybrid allocation controls */}
+        <div className="bg-white border border-[#E5E7EB] rounded-2xl p-4 space-y-3">
+          <div>
+            <div className="text-xs font-semibold text-gray-700">Allocation</div>
+            <p className="text-[11px] text-gray-500 mt-1">The receipt records money received; allocation records which rent periods it covers.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {(['automatic', 'manual'] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => {
+                  setAllocationMode(mode);
+                  const payAmount = Number(amount) || 0;
+                  if (mode === 'manual' && manualAllocations.length === 0 && payAmount > 0) {
+                    let rem = payAmount;
+                    const prefilled: Array<{ chargeId: string; amount: string }> = [];
+                    for (const ch of eligibleCharges) {
+                      if (rem <= 0) break;
+                      const bal = Math.max(0, Number(ch.amount) - Number(ch.paidAmount));
+                      if (bal > 0) {
+                        const alloc = Math.min(bal, rem);
+                        prefilled.push({ chargeId: String(ch.id), amount: String(alloc) });
+                        rem -= alloc;
+                      }
+                    }
+                    if (prefilled.length > 0) {
+                      setManualAllocations(prefilled);
+                    }
+                  }
+                }}
+                className={`rounded-lg border px-3 py-2 text-xs font-semibold capitalize ${
+                  allocationMode === mode
+                    ? 'border-brand-700 bg-[#EBF5F0] text-brand-700'
+                    : 'border-[#E5E7EB] text-gray-600'
+                }`}
+              >
+                {mode === 'automatic' ? 'Automatic · oldest first' : 'Manual'}
+              </button>
+            ))}
+          </div>
+          {allocationMode === 'manual' && (
+            <div className="space-y-3">
+              <div className="text-[11px] font-semibold text-gray-600">Existing outstanding charges</div>
+              {eligibleCharges.length === 0 && (
+                <p className="text-xs text-gray-500">No eligible rent charges yet. You can reserve credit for future months.</p>
+              )}
+              {eligibleCharges.map((charge) => {
+                const existing = manualAllocations.find((item) => item.chargeId === String(charge.id))?.amount ?? '';
+                const balance = Number(charge.amount) - Number(charge.paidAmount);
+                return (
+                  <label key={charge.id} className="flex items-center justify-between gap-3 text-xs">
+                    <span className="text-gray-700">
+                      {formatMonthYear(charge.month)} · balance {formatKSh(balance)}
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      max={balance}
+                      step="0.01"
+                      value={existing}
+                      onChange={(event) =>
+                        setManualAllocations((items) => {
+                          const rest = items.filter((item) => item.chargeId !== String(charge.id));
+                          return event.target.value
+                            ? [...rest, { chargeId: String(charge.id), amount: event.target.value }]
+                            : rest;
+                        })
+                      }
+                      placeholder="0.00"
+                      className="w-32 rounded-lg border border-[#E5E7EB] px-2 py-1.5 text-right"
+                    />
+                  </label>
+                );
+              })}
+              <div className="text-[11px] font-semibold text-gray-600 pt-1">Reserve for future rent periods</div>
+              {reservations.map((item, index) => (
+                <div key={`${item.month}-${index}`} className="flex gap-2">
+                  <input
+                    type="month"
+                    min={selectedTenancy?.startDate.slice(0, 7)}
+                    value={item.month}
+                    onChange={(event) =>
+                      setReservations((rows) =>
+                        rows.map((row, i) => (i === index ? { ...row, month: event.target.value } : row))
+                      )
+                    }
+                    className="min-w-0 flex-1 rounded-lg border border-[#E5E7EB] px-2 py-1.5 text-xs"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={item.amount}
+                    onChange={(event) =>
+                      setReservations((rows) =>
+                        rows.map((row, i) => (i === index ? { ...row, amount: event.target.value } : row))
+                      )
+                    }
+                    placeholder="Amount"
+                    className="w-32 rounded-lg border border-[#E5E7EB] px-2 py-1.5 text-right text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setReservations((rows) => rows.filter((_, i) => i !== index))}
+                    className="px-2 text-red-600"
+                    aria-label="Remove reservation"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              <button type="button" onClick={() => setReservations((rows) => [...rows, { month: '', amount: '' }])}
+                className="text-xs font-semibold text-brand-700 hover:underline">+ Add future rent month</button>
+              <div className="flex justify-between border-t border-gray-100 pt-2 text-xs">
+                <span>Directed to rent / future reservations</span><strong>{formatKSh(manuallyDirected)}</strong>
+              </div>
+            </div>
+          )}
+          <div className="flex justify-between border-t border-gray-100 pt-2 text-xs">
+            <span>Unallocated advance credit after this receipt</span><strong>{formatKSh(previewCredit)}</strong>
+          </div>
         </div>
 
         {/* Live Calculation Box: Apply to selected month rent */}

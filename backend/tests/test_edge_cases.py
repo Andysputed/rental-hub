@@ -62,8 +62,8 @@ class EdgeCaseTestSuite(TestCase):
             status="active"
         )
 
-    def test_payment_exceeding_total_balance_rejected(self):
-        """Payment amount exceeding the total outstanding rent charges is rejected."""
+    def test_payment_exceeding_total_balance_is_retained_as_credit(self):
+        """Money beyond the rent balance is recorded as available advance credit."""
         charge = RentCharge.objects.create(
             tenancy=self.tenancy,
             room=self.room1,
@@ -82,10 +82,13 @@ class EdgeCaseTestSuite(TestCase):
             'reference': 'OVERPAY_REF_01',
             'paymentDate': '2026-10-15'
         }, format='json')
-        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('amount', res.data)
-        # Verify no payment was created
-        self.assertFalse(Payment.objects.filter(reference='OVERPAY_REF_01').exists())
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        charge.refresh_from_db()
+        self.assertEqual(charge.paid_amount, Decimal('10000.00'))
+        payment = Payment.objects.get(reference='OVERPAY_REF_01')
+        self.assertEqual(payment.amount, Decimal('12000.00'))
+        self.assertEqual(sum((a.amount for a in payment.allocations.all()), Decimal('0.00')), Decimal('5000.00'))
+        self.assertEqual(res.data['availableCredit'], Decimal('7000.00'))
 
     def test_payment_spillover_across_multiple_charges(self):
         """Payment allocates up to primary charge balance, and spills over to next unpaid charge."""

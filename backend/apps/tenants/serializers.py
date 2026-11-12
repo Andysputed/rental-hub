@@ -1,8 +1,10 @@
 from decimal import Decimal
 from rest_framework import serializers
 from django.db import transaction, IntegrityError
+from django.utils import timezone
 from django.conf import settings as django_settings
 from apps.properties.models import Room
+from apps.properties.services import get_active_property_id
 from apps.payments.models import Deposit
 from .models import Tenant, Tenancy
 
@@ -27,7 +29,11 @@ class TenantSerializer(serializers.ModelSerializer):
         ]
 
     def get_activeRoom(self, obj):
-        active_tenancy = obj.tenancies.filter(status='active', room__property_id=django_settings.RENTALHUB_PROPERTY_ID).select_related('room').first()
+        active_prop_id = get_active_property_id()
+        qs = obj.tenancies.filter(status='active')
+        if active_prop_id:
+            qs = qs.filter(room__property_id=active_prop_id)
+        active_tenancy = qs.select_related('room').first()
         if active_tenancy and active_tenancy.room:
             return {
                 'id': active_tenancy.room.id,
@@ -75,6 +81,12 @@ class TenantRegistrationSerializer(serializers.Serializer):
     moveInDate = serializers.DateField()
     monthlyRent = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal('0.01'))
     deposit = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal('0.00'), default=Decimal('0.00'), required=False)
+    depositRequired = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal('0.00'), required=False)
+    depositPaid = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal('0.00'), default=Decimal('0.00'), required=False)
+    depositMethod = serializers.ChoiceField(choices=['mpesa', 'cash', 'bank'], default='mpesa', required=False)
+    depositReference = serializers.CharField(max_length=100, required=False, allow_blank=True, default='')
+    depositWaived = serializers.BooleanField(default=False, required=False)
+    depositWaivedReason = serializers.CharField(required=False, allow_blank=True, default='')
     rentDueDay = serializers.IntegerField(min_value=1, max_value=28, default=5, required=False)
 
     def validate_phone(self, value):
@@ -84,14 +96,38 @@ class TenantRegistrationSerializer(serializers.Serializer):
         return val
 
     def validate_roomId(self, value):
+        active_prop_id = get_active_property_id()
         try:
-            room = Room.objects.get(id=value, property_id=django_settings.RENTALHUB_PROPERTY_ID)
+            if active_prop_id:
+                room = Room.objects.get(id=value, property_id=active_prop_id)
+            else:
+                room = Room.objects.get(id=value)
         except Room.DoesNotExist:
             raise serializers.ValidationError("Selected room does not exist.")
 
         if room.status == 'occupied' or room.tenancies.filter(status='active').exists():
             raise serializers.ValidationError(f"{room.name} is already occupied by an active tenancy.")
         return value
+
+    def validate(self, attrs):
+        if 'depositRequired' not in attrs:
+            attrs['depositRequired'] = attrs.get('deposit', Decimal('0.00'))
+
+        deposit_req = attrs.get('depositRequired', Decimal('0.00'))
+        deposit_paid = attrs.get('depositPaid', Decimal('0.00'))
+        deposit_waived = attrs.get('depositWaived', False)
+        deposit_reason = attrs.get('depositWaivedReason', '').strip()
+
+        if deposit_waived:
+            if not deposit_reason:
+                raise serializers.ValidationError({'depositWaivedReason': 'A reason is required when waiving the security deposit.'})
+            if deposit_paid > Decimal('0.00'):
+                raise serializers.ValidationError({'depositPaid': 'Deposit paid must be 0 when deposit is waived.'})
+        else:
+            if deposit_paid > deposit_req:
+                raise serializers.ValidationError({'depositPaid': f'Deposit paid ({deposit_paid} KES) cannot exceed required deposit ({deposit_req} KES).'})
+
+        return attrs
 
     def create(self, validated_data):
         room_id = validated_data['roomId']
@@ -100,8 +136,17 @@ class TenantRegistrationSerializer(serializers.Serializer):
         email = validated_data.get('email', '')
         move_in_date = validated_data['moveInDate']
         monthly_rent = validated_data['monthlyRent']
-        deposit_amount = validated_data.get('deposit', Decimal('0.00'))
+        deposit_required = validated_data.get('depositRequired', validated_data.get('deposit', Decimal('0.00')))
+        deposit_paid = validated_data.get('depositPaid', Decimal('0.00'))
+        deposit_method = validated_data.get('depositMethod', 'mpesa')
+        deposit_ref = validated_data.get('depositReference', '').strip()
+        deposit_waived = validated_data.get('depositWaived', False)
+        deposit_waived_reason = validated_data.get('depositWaivedReason', '').strip()
         rent_due_day = validated_data.get('rentDueDay', 5)
+
+        # Backward compatibility for legacy tests that only send deposit without depositPaid/depositRequired:
+        if 'deposit' in self.initial_data and 'depositPaid' not in self.initial_data and 'depositRequired' not in self.initial_data:
+            deposit_paid = deposit_required
 
         with transaction.atomic():
             room = Room.objects.select_for_update().get(id=room_id)
@@ -119,7 +164,6 @@ class TenantRegistrationSerializer(serializers.Serializer):
                     'status': 'active',
                 }
             )
-            # If tenant existed, ensure full_name and status are updated
             tenant.full_name = full_name
             if email:
                 tenant.email = email
@@ -134,7 +178,7 @@ class TenantRegistrationSerializer(serializers.Serializer):
                         room=room,
                         start_date=move_in_date,
                         monthly_rent=monthly_rent,
-                        deposit=deposit_amount,
+                        deposit=deposit_required,
                         rent_due_day=rent_due_day,
                         status='active',
                     )
@@ -145,17 +189,36 @@ class TenantRegistrationSerializer(serializers.Serializer):
             room.status = 'occupied'
             room.save()
 
-            # If deposit recorded, store in separate Deposit ledger
-            if deposit_amount > Decimal('0.00'):
-                Deposit.objects.create(
+            # Record Deposit obligation if required > 0 or waived
+            if deposit_required > Decimal('0.00') or deposit_waived:
+                init_status = (
+                    'waived' if deposit_waived
+                    else ('held' if deposit_paid >= deposit_required
+                          else ('partially_paid' if deposit_paid > Decimal('0.00') else 'unpaid'))
+                )
+                deposit = Deposit.objects.create(
                     tenancy=tenancy,
                     tenant=tenant,
-                    amount=deposit_amount,
-                    received_date=move_in_date,
-                    status='held',
-                    reference=f"DEP-{tenancy.id}-{room.number}",
-                    notes=f"Initial security deposit for {room.name}"
+                    required_amount=deposit_required,
+                    amount=Decimal('0.00'),
+                    received_date=move_in_date if deposit_paid > Decimal('0.00') else None,
+                    status=init_status,
+                    is_waived=deposit_waived,
+                    waived_reason=deposit_waived_reason if deposit_waived else '',
+                    waived_at=timezone.now() if deposit_waived else None,
+                    reference=deposit_ref or f"DEP-{tenancy.id}-{room.number}",
+                    notes=f"Security deposit for {room.name}",
                 )
+                if deposit_paid > Decimal('0.00'):
+                    from apps.payments.services import record_deposit_payment
+                    record_deposit_payment(
+                        deposit=deposit,
+                        amount=deposit_paid,
+                        payment_date=move_in_date,
+                        method=deposit_method,
+                        reference=deposit_ref or f"DEP-{tenancy.id}-{room.number}",
+                        notes="Initial deposit payment at move-in",
+                    )
 
         return tenancy
 

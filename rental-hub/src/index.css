@@ -47,6 +47,11 @@ body {
 }
 
 @media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+
   body {
     background: white !important;
     color: black !important;
@@ -59,5 +64,183 @@ body {
     padding: 0 !important;
     box-shadow: none !important;
     border: none !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .report-screen-content {
+    display: none !important;
+  }
+
+  .report-print-document,
+  .report-print-document * {
+    visibility: visible !important;
+  }
+
+  .report-print-document {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    color: #111827 !important;
+    background: #fff !important;
+    font-family: Arial, sans-serif !important;
+    font-size: 9pt !important;
+  }
+
+  .report-print-header {
+    padding-bottom: 10pt;
+    margin-bottom: 12pt;
+    border-bottom: 2px solid #114b3e;
+    break-inside: avoid;
+  }
+
+  .report-print-brand {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12pt;
+  }
+
+  .report-print-property {
+    color: #114b3e;
+    font-size: 15pt;
+    font-weight: 700;
+  }
+
+  .report-print-location,
+  .report-print-period,
+  .report-print-note,
+  .report-print-footer,
+  .report-print-summary small {
+    color: #4b5563;
+  }
+
+  .report-print-header h1 {
+    margin: 10pt 0 5pt;
+    font-size: 19pt;
+    font-weight: 700;
+  }
+
+  .report-print-period {
+    display: flex;
+    gap: 8pt;
+    align-items: baseline;
+    font-size: 8.5pt;
+  }
+
+  .report-print-summary,
+  .report-print-section {
+    margin: 12pt 0;
+    break-inside: auto;
+  }
+
+  .report-print-summary h2,
+  .report-print-section h2 {
+    margin: 0 0 6pt;
+    color: #114b3e;
+    font-size: 11pt;
+    font-weight: 700;
+  }
+
+  .report-print-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6pt;
+    break-inside: avoid;
+  }
+
+  .report-print-kpis > div {
+    display: flex;
+    flex-direction: column;
+    gap: 3pt;
+    padding: 7pt;
+    border: 1px solid #d1d5db;
+    border-radius: 4pt;
+  }
+
+  .report-print-kpis span,
+  .report-print-kpis small {
+    font-size: 7.5pt;
+  }
+
+  .report-print-kpis strong {
+    font-size: 12pt;
+  }
+
+  .report-print-document table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: auto;
+    font-size: 8pt;
+  }
+
+  .report-print-document thead {
+    display: table-header-group;
+  }
+
+  .report-print-document tr {
+    break-inside: avoid;
+  }
+
+  .report-print-document th,
+  .report-print-document td {
+    padding: 4pt 5pt;
+    border-bottom: 1px solid #d1d5db;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .report-print-document th {
+    background: #f3f4f6 !important;
+    color: #1f2937;
+    font-weight: 700;
+    print-color-adjust: exact;
+  }
+
+  .report-charge-table td:nth-child(n + 5),
+  .report-charge-table tfoot th:not(:first-child),
+  .report-cash-table td,
+  .report-expense-table td:last-child,
+  .report-expense-table tfoot th:not(:first-child),
+  .report-occupancy-table td:last-child,
+  .report-occupancy-table tfoot th:not(:first-child),
+  .report-overdue-table td:nth-child(n + 4) {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .report-print-document tfoot th {
+    border-top: 1.5px solid #6b7280;
+    background: #f9fafb !important;
+    print-color-adjust: exact;
+  }
+
+  .report-print-note,
+  .report-print-empty,
+  .report-print-footer {
+    margin: 0 0 6pt;
+    font-size: 8pt;
+  }
+
+  .report-print-total th,
+  .report-print-total td {
+    border-top: 1.5px solid #6b7280;
+    font-weight: 700;
+    font-size: 9pt;
+  }
+
+  .report-print-footer {
+    padding-top: 8pt;
+    margin-top: 14pt;
+    border-top: 1px solid #9ca3af;
+    line-height: 1.4;
+  }
+}
+
+@media screen {
+  .report-print-document {
+    display: none;
   }
 }

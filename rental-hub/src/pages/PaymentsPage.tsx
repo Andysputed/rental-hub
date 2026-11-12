@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, FileText, ChevronRight, Inbox } from 'lucide-react';
-import { useRental } from '../context/RentalContext';
+import { useRental } from '../context/useRental';
 import { MonthSelector } from '../components/common/MonthSelector';
 import { Badge } from '../components/common/Badge';
 import { formatKSh, formatDateShort, formatMonthYear } from '../utils/format';

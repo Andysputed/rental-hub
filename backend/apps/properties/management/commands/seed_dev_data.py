@@ -10,18 +10,18 @@ from apps.expenses.models import Expense
 
 
 class Command(BaseCommand):
-    help = "Seed development data matching RentalHub Acacia House 6-room property wireframes"
+    help = "Seed development data matching Kimumu Rentals 6-room property wireframes"
 
     def handle(self, *args, **options):
         with transaction.atomic():
-            self.stdout.write("Seeding development data for Acacia House...")
+            self.stdout.write("Seeding development data for Kimumu Rentals...")
 
             # 1. Property
             prop, _ = Property.objects.get_or_create(
                 id=1,
                 defaults={
-                    'name': 'Acacia House',
-                    'location': 'Nairobi · 6 rooms',
+                    'name': 'Kimumu Rentals',
+                    'location': 'Kimumu, Eldoret, Kenya',
                     'currency': 'KES',
                 }
             )
@@ -173,4 +173,4 @@ class Command(BaseCommand):
                     }
                 )
 
-            self.stdout.write(self.style.SUCCESS("Successfully seeded development data for Acacia House!"))
+            self.stdout.write(self.style.SUCCESS("Successfully seeded development data for Kimumu Rentals!"))

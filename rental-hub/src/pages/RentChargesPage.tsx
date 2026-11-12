@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Calendar, CheckCircle2 } from 'lucide-react';
-import { useRental } from '../context/RentalContext';
+import { useRental } from '../context/useRental';
+import { getErrorMessage } from '../services/api';
 import { MonthSelector } from '../components/common/MonthSelector';
 import { Badge } from '../components/common/Badge';
 import { formatKSh, formatMonthYear, formatMonthShort } from '../utils/format';
@@ -23,6 +24,8 @@ export const RentChargesPage: React.FC = () => {
   } = useRental();
 
   const [message, setMessage] = useState<string | null>(null);
+  const now = new Date();
+  const localToday = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
 
   const currentMonthCharges = rentCharges.filter((c) => c.month === selectedMonth);
   const overdueCount = currentMonthCharges.filter((c) => c.status === 'overdue' && c.amount > c.paidAmount).length;
@@ -36,8 +39,8 @@ export const RentChargesPage: React.FC = () => {
         setMessage(`All occupied room charges for ${selectedMonth} are already generated. No duplicates created.`);
       }
       setTimeout(() => setMessage(null), 4000);
-    } catch (err: any) {
-      setMessage(err?.message || 'Failed to generate monthly charges');
+    } catch (err: unknown) {
+      setMessage(getErrorMessage(err, 'Failed to generate monthly charges'));
       setTimeout(() => setMessage(null), 4000);
     }
   };
@@ -101,6 +104,7 @@ export const RentChargesPage: React.FC = () => {
           const tenant = tenancy ? tenants.find((t) => t.id === tenancy.tenantId) : undefined;
           const balance = charge.amount - charge.paidAmount;
           const isPaid = balance === 0;
+          const isDue = charge.dueDate <= localToday;
 
           return (
             <div
@@ -112,7 +116,7 @@ export const RentChargesPage: React.FC = () => {
                 <span className="text-sm font-bold text-gray-900">
                   {room?.name} · {formatKSh(charge.amount)}
                 </span>
-                <Badge variant={isPaid ? 'paid' : 'overdue'}>{isPaid ? 'Paid' : 'Overdue'}</Badge>
+                <Badge variant={isPaid ? 'paid' : isDue ? 'overdue' : 'neutral'}>{isPaid ? 'Paid' : isDue ? 'Overdue' : 'Due soon'}</Badge>
               </div>
 
               <div className="text-xs text-gray-500">

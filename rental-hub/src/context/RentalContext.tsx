@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import type { Room, Tenant, Tenancy, RentCharge, Payment, Expense, PropertySettings, Deposit, SettleDepositPayload } from '../types';
+import React, { useState, useEffect, useCallback } from 'react';
+import type { Room, Tenant, Tenancy, RentCharge, Payment, Expense, PropertySettings, Deposit, SettleDepositPayload, MoveOutRequest } from '../types';
 import {
   roomsApi,
   tenantsApi,
@@ -11,6 +11,8 @@ import {
   settingsApi,
 } from '../services/api';
 import { getCurrentMonth } from '../utils/format';
+import { getErrorMessage } from '../services/api';
+import { RentalContext } from './rentalContextState';
 
 interface RecordPaymentInput {
   tenantId?: string;
@@ -22,6 +24,9 @@ interface RecordPaymentInput {
   method: string;
   reference: string;
   notes?: string;
+  allocationMode?: 'automatic' | 'manual';
+  allocations?: Array<{ chargeId: string; amount: string | number }>;
+  reservations?: Array<{ month: string; amount: string | number }>;
 }
 
 interface RegisterTenantInput {
@@ -33,7 +38,13 @@ interface RegisterTenantInput {
 interface RegisterTenancyInput {
   roomId: string;
   monthlyRent: number;
-  deposit: number;
+  deposit?: number;
+  depositRequired?: number;
+  depositPaid?: number;
+  depositMethod?: string;
+  depositReference?: string;
+  depositWaived?: boolean;
+  depositWaivedReason?: string;
   startDate: string;
   rentDueDay: number;
 }
@@ -49,7 +60,7 @@ interface AddExpenseInput {
   property?: string;
 }
 
-interface RentalContextType {
+export interface RentalContextType {
   settings: PropertySettings;
   rooms: Room[];
   tenants: Tenant[];
@@ -79,7 +90,17 @@ interface RentalContextType {
   // Actions
   recordPayment: (payment: RecordPaymentInput) => Promise<Payment>;
   registerTenant: (tenantData: RegisterTenantInput, tenancyData: RegisterTenancyInput) => Promise<void>;
-  moveOutTenant: (tenancyId: string | number, payload: { endDate: string; notes?: string }) => Promise<void>;
+  recordDepositPayment: (
+    depositId: string | number,
+    payload: {
+      amount: number;
+      paymentDate: string;
+      method?: string;
+      reference?: string;
+      notes?: string;
+    }
+  ) => Promise<Deposit>;
+  moveOutTenant: (tenancyId: string | number, payload: MoveOutRequest) => Promise<void>;
   settleDeposit: (tenancyId: string | number, payload: SettleDepositPayload) => Promise<Deposit>;
   addExpense: (expense: AddExpenseInput) => Promise<void>;
   generateMonthlyCharges: (month: string) => Promise<number>;
@@ -94,8 +115,8 @@ interface RentalContextType {
 }
 
 const DEFAULT_SETTINGS: PropertySettings = {
-  propertyName: 'Acacia House',
-  location: 'Nairobi · 6 rooms',
+  propertyName: 'Kimumu Rentals',
+  location: 'Kimumu, Eldoret, Kenya',
   landlordName: 'Veronicah K.',
   landlordInitials: 'VK',
   landlordPhone: '',
@@ -112,8 +133,6 @@ const DEFAULT_SETTINGS: PropertySettings = {
     '06': 10000,
   },
 };
-
-const RentalContext = createContext<RentalContextType | undefined>(undefined);
 
 export const RentalProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [selectedMonth, setSelectedMonthState] = useState<string>(() => {
@@ -181,20 +200,22 @@ export const RentalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setExpenses(fetchedExpenses);
       setDeposits(fetchedDeposits);
       setError(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to load data from Django backend:', err);
-      setError(err?.message || 'Could not connect to backend server');
+      setError(getErrorMessage(err, 'Could not connect to backend server'));
     } finally {
       setIsLoading(false);
     }
   }, [selectedMonth]);
 
   useEffect(() => {
-    refreshData();
+    queueMicrotask(() => { void refreshData(); });
   }, [refreshData]);
 
   // Computed metrics directly derived from backend data
   const currentMonthCharges = rentCharges.filter((c) => c.month === selectedMonth);
+  const now = new Date();
+  const localToday = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
   const totalRentCharged = currentMonthCharges.reduce((acc, c) => acc + c.amount, 0);
   const totalRentReceived = currentMonthCharges.reduce((acc, c) => acc + c.paidAmount, 0);
   const totalOutstanding = currentMonthCharges.reduce((acc, c) => acc + (c.amount - c.paidAmount), 0);
@@ -204,7 +225,7 @@ export const RentalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const occupancyCount = rooms.filter((r) => r.status === 'occupied').length;
   const occupancyPercentage = rooms.length > 0 ? Math.round((occupancyCount / rooms.length) * 100) : 0;
-  const overdueCount = currentMonthCharges.filter((c) => c.status === 'overdue' || (c.amount - c.paidAmount > 0)).length;
+  const overdueCount = currentMonthCharges.filter((c) => c.dueDate <= localToday && c.amount - c.paidAmount > 0).length;
   const totalDepositsHeld = deposits.filter((d) => d.status === 'held').reduce((acc, d) => acc + d.amount, 0);
   const totalDepositsRefunded = deposits.reduce((acc, d) => acc + (d.refundAmount || 0), 0);
 
@@ -218,13 +239,17 @@ export const RentalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         reference: paymentData.reference,
         paymentDate: paymentData.date,
         chargeId: paymentData.chargeId,
+        tenancyId: paymentData.tenancyId,
+        allocationMode: paymentData.allocationMode,
+        allocations: paymentData.allocations,
+        reservations: paymentData.reservations,
         notes: paymentData.notes,
       });
 
       // Synchronize data from backend
       await refreshData();
       return newPayment;
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Record payment error:', err);
       throw err;
     }
@@ -242,25 +267,51 @@ export const RentalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         roomId: tenancyData.roomId,
         moveInDate: tenancyData.startDate,
         monthlyRent: tenancyData.monthlyRent,
+        depositRequired: tenancyData.depositRequired,
+        depositPaid: tenancyData.depositPaid,
+        depositMethod: tenancyData.depositMethod,
+        depositReference: tenancyData.depositReference,
+        depositWaived: tenancyData.depositWaived,
+        depositWaivedReason: tenancyData.depositWaivedReason,
         deposit: tenancyData.deposit,
         rentDueDay: tenancyData.rentDueDay,
       });
 
       await refreshData();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Register tenant error:', err);
+      throw err;
+    }
+  };
+
+  const recordDepositPayment = async (
+    depositId: string | number,
+    payload: {
+      amount: number;
+      paymentDate: string;
+      method?: string;
+      reference?: string;
+      notes?: string;
+    }
+  ): Promise<Deposit> => {
+    try {
+      const res = await depositsApi.recordPayment(depositId, payload);
+      await refreshData();
+      return res;
+    } catch (err: unknown) {
+      console.error('Record deposit payment error:', err);
       throw err;
     }
   };
 
   const moveOutTenant = async (
     tenancyId: string | number,
-    payload: { endDate: string; notes?: string }
+    payload: MoveOutRequest
   ): Promise<void> => {
     try {
       await tenanciesApi.moveOut(tenancyId, payload);
       await refreshData();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Move out tenant error:', err);
       throw err;
     }
@@ -274,7 +325,7 @@ export const RentalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const settled = await tenanciesApi.settleDeposit(tenancyId, payload);
       await refreshData();
       return settled;
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Settle deposit error:', err);
       throw err;
     }
@@ -293,7 +344,7 @@ export const RentalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
 
       await refreshData();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Add expense error:', err);
       throw err;
     }
@@ -304,7 +355,7 @@ export const RentalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const res = await rentChargesApi.generate(month);
       await refreshData();
       return res.createdCount;
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Generate charges error:', err);
       throw err;
     }
@@ -315,7 +366,7 @@ export const RentalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const updated = await settingsApi.update(newSettings);
       setSettings(updated);
       await refreshData();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Update settings error:', err);
       throw err;
     }
@@ -345,7 +396,7 @@ export const RentalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const getOverdueCharges = () => {
     return currentMonthCharges
-      .filter((c) => c.status === 'overdue' || (c.amount - c.paidAmount > 0))
+      .filter((c) => c.dueDate <= localToday && c.amount - c.paidAmount > 0)
       .map((c) => {
         const room = rooms.find((r) => String(r.id) === String(c.roomId));
         const tenancy = tenancies.find((t) => String(t.id) === String(c.tenancyId));
@@ -395,6 +446,7 @@ export const RentalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         totalDepositsRefunded,
         recordPayment,
         registerTenant,
+        recordDepositPayment,
         moveOutTenant,
         settleDeposit,
         addExpense,
@@ -412,12 +464,4 @@ export const RentalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       {children}
     </RentalContext.Provider>
   );
-};
-
-export const useRental = () => {
-  const context = useContext(RentalContext);
-  if (!context) {
-    throw new Error('useRental must be used within a RentalProvider');
-  }
-  return context;
 };

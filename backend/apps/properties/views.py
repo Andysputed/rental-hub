@@ -5,11 +5,7 @@ from django.db import transaction
 from django.conf import settings as django_settings
 from .models import Property, PropertySettings, Room
 from .serializers import PropertySettingsSerializer, PropertySettingsUpdateSerializer, RoomSerializer
-
-
-def get_default_property():
-    """Read the explicitly configured property without mutating data on GET."""
-    return Property.objects.filter(pk=django_settings.RENTALHUB_PROPERTY_ID).first()
+from .services import get_default_property, get_active_property_id
 
 
 class RoomViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.UpdateModelMixin, viewsets.GenericViewSet):
@@ -17,7 +13,9 @@ class RoomViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Updat
 
     def get_queryset(self):
         qs = Room.objects.all().select_related('property').prefetch_related('tenancies__tenant')
-        qs = qs.filter(property_id=django_settings.RENTALHUB_PROPERTY_ID)
+        active_prop_id = get_active_property_id()
+        if active_prop_id:
+            qs = qs.filter(property_id=active_prop_id)
         status_param = self.request.query_params.get('status')
         if status_param in ('occupied', 'vacant'):
             qs = qs.filter(status=status_param)
@@ -48,7 +46,7 @@ class PropertySettingsView(APIView):
         return self._response(prop, prop.settings)
 
     def patch(self, request):
-        prop_id = django_settings.RENTALHUB_PROPERTY_ID
+        prop_id = get_active_property_id()
         if not Property.objects.filter(pk=prop_id).exists():
             return Response({"detail": "Configured property is not initialized."}, status=status.HTTP_404_NOT_FOUND)
         serializer = PropertySettingsUpdateSerializer(data=request.data)

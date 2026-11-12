@@ -12,7 +12,70 @@ import type {
   Deposit,
   SettlementSummary,
   SettleDepositPayload,
+  MoveOutRequest,
+  PaymentMethod,
+  DepositDeduction,
+  DepositPayment,
 } from '../types';
+
+interface ApiPage<T> { results: T[]; next: string | null; }
+interface RoomResponse {
+  id: string | number; number: string; name: string; defaultRent?: number | string;
+  default_rent?: number | string; status: Room['status']; currentTenancyId?: string | number | null;
+  currentTenancy?: Room['currentTenancy'];
+}
+interface TenantResponse {
+  id: string | number; fullName?: string; full_name?: string; phone: string; email?: string;
+  initials: string; status: Tenant['status']; activeRoom?: Tenant['activeRoom'];
+}
+interface TenancyResponse {
+  id: string | number; roomId: string | number; tenantId: string | number; tenantName?: string;
+  roomName?: string; startDate: string; endDate?: string; monthlyRent: number | string;
+  deposit: number | string; rentDueDay: number | string; status: Tenancy['status'];
+}
+interface ChargeResponse {
+  id: string | number; tenancyId: string | number; roomId: string | number; roomName?: string;
+  tenantId: string | number; tenantName?: string; month: string; dueDate: string;
+  amount: number | string; paidAmount: number | string; status: RentCharge['status']; balance: number | string;
+}
+interface PaymentResponse {
+  id: string | number; receiptNumber?: string; receipt_number?: string; tenantId: string | number;
+  tenantName?: string; tenancyId: string | number; roomId: string | number; roomName?: string;
+  chargeId?: string | number | null; amount: number | string; date: string; method: PaymentMethod;
+  reference: string; notes?: string;
+  allocations?: NonNullable<Payment['allocations']>; reservations?: NonNullable<Payment['reservations']>;
+  refunds?: NonNullable<Payment['refunds']>; availableCredit?: number | string; isReversed?: boolean;
+}
+interface DepositResponse extends Omit<Deposit, 'id' | 'tenancyId' | 'amount' | 'requiredAmount' | 'totalPaid' | 'outstandingBalance' | 'rentDeducted' | 'repairsDeducted' | 'totalDeductions' | 'refundableBalance' | 'refundAmount' | 'deductions' | 'payments'> {
+  id: string | number; tenancyId: string | number; amount: number | string; requiredAmount?: number | string;
+  totalPaid?: number | string; outstandingBalance?: number | string; rentDeducted?: number | string;
+  repairsDeducted?: number | string; totalDeductions?: number | string; refundableBalance?: number | string;
+  refundAmount?: number | string; received_date?: string; created_at?: string; updated_at?: string;
+  deductions?: Array<Partial<DepositDeduction> & { deduction_type?: DepositDeduction['deductionType']; created_at?: string }>;
+  payments?: Array<Partial<DepositPayment> & { payment_date?: string; created_at?: string }>;
+}
+interface ExpenseResponse {
+  id: string | number; category: Expense['category']; title: string; amount: number | string;
+  date: string; method: Expense['method']; reference?: string; description?: string; propertyName?: string;
+}
+type SettingsResponse = PropertySettings;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+export function getErrorMessage(value: unknown, fallback: string): string {
+  return value instanceof Error ? value.message : fallback;
+}
+export function getApiErrorDetail(value: unknown, keys: string[], fallback: string): string {
+  if (value instanceof ApiError && isRecord(value.data)) {
+    for (const key of keys) {
+      const detail = value.data[key];
+      if (typeof detail === 'string') return detail;
+      if (Array.isArray(detail) && typeof detail[0] === 'string') return detail[0];
+    }
+  }
+  return getErrorMessage(value, fallback);
+}
 
 export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:8000/api/v1' : '')).replace(/\/$/, '');
 let csrfToken: string | null = null;
@@ -21,9 +84,12 @@ export async function getCsrfToken(forceRefresh = false): Promise<string> {
   if (csrfToken && !forceRefresh) return csrfToken;
   const response = await fetch(`${API_BASE_URL}/auth/csrf/`, { credentials: 'include' });
   if (!response.ok) throw new ApiError('Unable to establish a secure session.', response.status);
-  const data = await response.json();
+  const data: unknown = await response.json();
+  if (!isRecord(data) || typeof data.csrfToken !== 'string') {
+    throw new ApiError('Unable to establish a secure session.', response.status);
+  }
   csrfToken = data.csrfToken;
-  return csrfToken as string;
+  return csrfToken;
 }
 
 export async function apiFetch(endpoint: string, options: RequestInit = {}): Promise<Response> {
@@ -43,9 +109,9 @@ export async function apiFetch(endpoint: string, options: RequestInit = {}): Pro
 
 export class ApiError extends Error {
   public status: number;
-  public data: any;
+  public data: unknown;
 
-  constructor(message: string, status: number, data?: any) {
+  constructor(message: string, status: number, data?: unknown) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
@@ -58,14 +124,14 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     const response = await apiFetch(endpoint, options);
 
     if (!response.ok) {
-      let errorData: any = null;
+      let errorData: unknown = null;
       let errorMsg = `API request failed with status ${response.status}`;
       try {
         errorData = await response.json();
-        if (typeof errorData === 'object' && errorData !== null) {
-          if (errorData.error) {
+        if (isRecord(errorData)) {
+          if (typeof errorData.error === 'string') {
             errorMsg = errorData.error;
-          } else if (errorData.detail) {
+          } else if (typeof errorData.detail === 'string') {
             errorMsg = errorData.detail;
           } else {
             // First validation error message
@@ -89,29 +155,29 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     }
 
     return await response.json();
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (err instanceof ApiError) {
       throw err;
     }
     throw new ApiError(
-      err?.message || 'Network connection failed. Please check if the Django backend server is running.',
+      getErrorMessage(err, 'Network connection failed. Please check if the Django backend server is running.'),
       0
     );
   }
 }
 
 async function requestAll<T>(endpoint: string): Promise<T[]> {
-  const first = await request<any>(endpoint);
+  const first = await request<T[] | ApiPage<T>>(endpoint);
   if (Array.isArray(first)) return first as T[];
-  const items: T[] = [...(Array.isArray(first?.results) ? first.results : [])];
-  let next: string | null = first?.next ?? null;
+  const items: T[] = [...(first.results ?? [])];
+  let next: string | null = first.next ?? null;
   const apiBase = new URL(API_BASE_URL);
   while (next) {
     const nextUrl = new URL(next, API_BASE_URL);
     if (nextUrl.origin !== apiBase.origin || !(nextUrl.pathname === apiBase.pathname || nextUrl.pathname.startsWith(`${apiBase.pathname}/`))) {
       throw new ApiError('The API returned an invalid pagination link.', 502);
     }
-    const page = await request<any>(nextUrl.href);
+    const page = await request<ApiPage<T>>(nextUrl.href);
     if (!page || !Array.isArray(page.results)) throw new ApiError('The API returned an invalid page.', 502);
     items.push(...page.results);
     next = page.next ?? null;
@@ -123,7 +189,7 @@ async function requestAll<T>(endpoint: string): Promise<T[]> {
 export const roomsApi = {
   list: async (status?: 'occupied' | 'vacant'): Promise<Room[]> => {
     const query = status ? `?status=${status}` : '';
-    const rawRooms = await requestAll<any>(`/rooms/${query}`);
+    const rawRooms = await requestAll<RoomResponse>(`/rooms/${query}`);
     return rawRooms.map((r) => ({
       id: String(r.id),
       number: r.number,
@@ -141,7 +207,7 @@ export const roomsApi = {
     }));
   },
   get: async (id: string | number): Promise<Room> => {
-    const r = await request<any>(`/rooms/${id}/`);
+    const r = await request<RoomResponse>(`/rooms/${id}/`);
     return {
       id: String(r.id),
       number: r.number,
@@ -161,7 +227,7 @@ export const tenantsApi = {
     if (search) params.append('search', search);
     if (status) params.append('status', status);
     const qs = params.toString() ? `?${params.toString()}` : '';
-    const raw = await requestAll<any>(`/tenants/${qs}`);
+    const raw = await requestAll<TenantResponse>(`/tenants/${qs}`);
     return raw.map((t) => ({
       id: String(t.id),
       fullName: t.fullName ?? t.full_name,
@@ -173,7 +239,7 @@ export const tenantsApi = {
     }));
   },
   get: async (id: string | number): Promise<Tenant> => {
-    const t = await request<any>(`/tenants/${id}/`);
+    const t = await request<TenantResponse>(`/tenants/${id}/`);
     return {
       id: String(t.id),
       fullName: t.fullName ?? t.full_name,
@@ -194,7 +260,7 @@ export const tenanciesApi = {
     if (params?.tenantId) sp.append('tenantId', String(params.tenantId));
     if (params?.status) sp.append('status', params.status);
     const qs = sp.toString() ? `?${sp.toString()}` : '';
-    const raw = await requestAll<any>(`/tenancies/${qs}`);
+    const raw = await requestAll<TenancyResponse>(`/tenancies/${qs}`);
     return raw.map((t) => ({
       id: String(t.id),
       roomId: String(t.roomId),
@@ -216,10 +282,16 @@ export const tenanciesApi = {
     roomId: string | number;
     moveInDate: string;
     monthlyRent: number;
+    depositRequired?: number;
+    depositPaid?: number;
+    depositMethod?: string;
+    depositReference?: string;
+    depositWaived?: boolean;
+    depositWaivedReason?: string;
     deposit?: number;
     rentDueDay?: number;
   }): Promise<Tenancy> => {
-    const raw = await request<any>('/tenancies/register/', {
+    const raw = await request<TenancyResponse>('/tenancies/register/', {
       method: 'POST',
       body: JSON.stringify({
         ...payload,
@@ -240,8 +312,8 @@ export const tenanciesApi = {
       status: raw.status,
     };
   },
-  moveOut: async (tenancyId: string | number, payload: { endDate: string; notes?: string }): Promise<Tenancy> => {
-    const raw = await request<any>(`/tenancies/${tenancyId}/move-out/`, {
+  moveOut: async (tenancyId: string | number, payload: MoveOutRequest): Promise<Tenancy> => {
+    const raw = await request<TenancyResponse>(`/tenancies/${tenancyId}/move-out/`, {
       method: 'POST',
       body: JSON.stringify(payload),
     });
@@ -263,7 +335,7 @@ export const tenanciesApi = {
     return await request<SettlementSummary>(`/tenancies/${tenancyId}/settlement-summary/`);
   },
   settleDeposit: async (tenancyId: string | number, payload: SettleDepositPayload): Promise<Deposit> => {
-    const raw = await request<any>(`/tenancies/${tenancyId}/settle-deposit/`, {
+    const raw = await request<DepositResponse>(`/tenancies/${tenancyId}/settle-deposit/`, {
       method: 'POST',
       body: JSON.stringify(payload),
     });
@@ -280,7 +352,7 @@ export const rentChargesApi = {
     if (params?.tenancyId) sp.append('tenancyId', String(params.tenancyId));
     if (params?.status) sp.append('status', params.status);
     const qs = sp.toString() ? `?${sp.toString()}` : '';
-    const raw = await requestAll<any>(`/rent-charges/${qs}`);
+    const raw = await requestAll<ChargeResponse>(`/rent-charges/${qs}`);
     return raw.map((c) => ({
       id: String(c.id),
       tenancyId: String(c.tenancyId),
@@ -303,7 +375,7 @@ export const rentChargesApi = {
       skippedCount: number;
       totalAmount: number;
       message: string;
-      charges: any[];
+      charges: RentCharge[];
     }>('/rent-charges/generate/', {
       method: 'POST',
       body: JSON.stringify({ month }),
@@ -329,7 +401,7 @@ export const paymentsApi = {
     if (params?.month) sp.append('month', params.month);
     if (params?.search) sp.append('search', params.search);
     const qs = sp.toString() ? `?${sp.toString()}` : '';
-    const raw = await requestAll<any>(`/payments/${qs}`);
+    const raw = await requestAll<PaymentResponse>(`/payments/${qs}`);
     return raw.map((p) => ({
       id: String(p.id),
       receiptNumber: p.receiptNumber ?? p.receipt_number,
@@ -338,12 +410,17 @@ export const paymentsApi = {
       tenancyId: String(p.tenancyId),
       roomId: String(p.roomId),
       roomName: p.roomName,
-      chargeId: String(p.chargeId),
+      chargeId: p.chargeId == null ? null : String(p.chargeId),
       amount: Number(p.amount),
       date: p.date,
       method: p.method,
       reference: p.reference,
       notes: p.notes,
+      allocations: p.allocations ?? [],
+      reservations: p.reservations ?? [],
+      refunds: p.refunds ?? [],
+      availableCredit: Number(p.availableCredit ?? 0),
+      isReversed: Boolean(p.isReversed),
     }));
   },
   record: async (payload: {
@@ -353,14 +430,27 @@ export const paymentsApi = {
     reference: string;
     paymentDate: string;
     chargeId?: string | number;
+    tenancyId?: string | number;
+    allocationMode?: 'automatic' | 'manual';
+    allocations?: Array<{ chargeId: string | number; amount: string | number }>;
+    reservations?: Array<{ month: string; amount: string | number }>;
     notes?: string;
   }): Promise<Payment> => {
-    const raw = await request<any>('/payments/', {
+    const raw = await request<PaymentResponse>('/payments/', {
       method: 'POST',
       body: JSON.stringify({
         ...payload,
         roomId: Number(payload.roomId),
+        tenancyId: payload.tenancyId ? Number(payload.tenancyId) : undefined,
         chargeId: payload.chargeId ? Number(payload.chargeId) : undefined,
+        allocations: payload.allocations?.map((item) => ({
+          chargeId: Number(item.chargeId),
+          amount: String(item.amount),
+        })),
+        reservations: payload.reservations?.map((item) => ({
+          month: item.month,
+          amount: String(item.amount),
+        })),
       }),
     });
     return {
@@ -371,12 +461,17 @@ export const paymentsApi = {
       tenancyId: String(raw.tenancyId),
       roomId: String(raw.roomId),
       roomName: raw.roomName,
-      chargeId: String(raw.chargeId),
+      chargeId: raw.chargeId == null ? null : String(raw.chargeId),
       amount: Number(raw.amount),
       date: raw.date,
       method: raw.method,
       reference: raw.reference,
       notes: raw.notes,
+      allocations: raw.allocations ?? [],
+      reservations: raw.reservations ?? [],
+      refunds: raw.refunds ?? [],
+      availableCredit: Number(raw.availableCredit ?? 0),
+      isReversed: Boolean(raw.isReversed),
     };
   },
   getReceipt: async (paymentId: string | number): Promise<ReceiptData> => {
@@ -384,7 +479,7 @@ export const paymentsApi = {
   },
 };
 
-function formatDeposit(raw: any): Deposit {
+function formatDeposit(raw: DepositResponse): Deposit {
   return {
     id: String(raw.id),
     tenancyId: String(raw.tenancyId),
@@ -394,7 +489,13 @@ function formatDeposit(raw: any): Deposit {
     roomId: raw.roomId ? String(raw.roomId) : undefined,
     roomName: raw.roomName || 'Room',
     roomNumber: raw.roomNumber,
+    requiredAmount: Number(raw.requiredAmount ?? raw.amount ?? 0),
     amount: Number(raw.amount),
+    totalPaid: Number(raw.totalPaid ?? raw.amount ?? 0),
+    outstandingBalance: Number(raw.outstandingBalance ?? 0),
+    isWaived: Boolean(raw.isWaived),
+    waivedReason: raw.waivedReason || '',
+    waivedAt: raw.waivedAt,
     receivedDate: raw.receivedDate || raw.received_date,
     status: raw.status,
     reference: raw.reference || '',
@@ -409,7 +510,7 @@ function formatDeposit(raw: any): Deposit {
     refundDate: raw.refundDate,
     settledAt: raw.settledAt,
     settlementNotes: raw.settlementNotes,
-    deductions: (raw.deductions || []).map((d: any) => ({
+    deductions: (raw.deductions || []).map((d) => ({
       id: d.id,
       deductionType: d.deductionType || d.deduction_type,
       description: d.description,
@@ -417,6 +518,16 @@ function formatDeposit(raw: any): Deposit {
       chargeId: d.chargeId,
       chargeMonth: d.chargeMonth,
       createdAt: d.created_at || d.createdAt,
+    })),
+    payments: (raw.payments || []).map((p) => ({
+      id: p.id,
+      depositId: p.depositId || raw.id,
+      amount: Number(p.amount),
+      paymentDate: p.paymentDate || p.payment_date,
+      method: p.method,
+      reference: p.reference || '',
+      notes: p.notes || '',
+      createdAt: p.created_at || p.createdAt,
     })),
     createdAt: raw.created_at,
     updatedAt: raw.updated_at,
@@ -433,15 +544,28 @@ export const depositsApi = {
     if (params?.roomId) sp.append('roomId', String(params.roomId));
     if (params?.search) sp.append('search', params.search);
     const qs = sp.toString() ? `?${sp.toString()}` : '';
-    const raw = await requestAll<any>(`/deposits/${qs}`);
+    const raw = await requestAll<DepositResponse>(`/deposits/${qs}`);
     return raw.map(formatDeposit);
   },
   get: async (depositId: string | number): Promise<Deposit> => {
-    const raw = await request<any>(`/deposits/${depositId}/`);
+    const raw = await request<DepositResponse>(`/deposits/${depositId}/`);
+    return formatDeposit(raw);
+  },
+  recordPayment: async (depositId: string | number, payload: {
+    amount: number;
+    paymentDate: string;
+    method?: string;
+    reference?: string;
+    notes?: string;
+  }): Promise<Deposit> => {
+    const raw = await request<DepositResponse>(`/deposits/${depositId}/record-payment/`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
     return formatDeposit(raw);
   },
   settle: async (depositId: string | number, payload: SettleDepositPayload): Promise<Deposit> => {
-    const raw = await request<any>(`/deposits/${depositId}/settle/`, {
+    const raw = await request<DepositResponse>(`/deposits/${depositId}/settle/`, {
       method: 'POST',
       body: JSON.stringify(payload),
     });
@@ -458,7 +582,7 @@ export const expensesApi = {
     if (params?.startDate) sp.append('startDate', params.startDate);
     if (params?.endDate) sp.append('endDate', params.endDate);
     const qs = sp.toString() ? `?${sp.toString()}` : '';
-    const raw = await requestAll<any>(`/expenses/${qs}`);
+    const raw = await requestAll<ExpenseResponse>(`/expenses/${qs}`);
     return raw.map((e) => ({
       id: String(e.id),
       category: e.category,
@@ -468,7 +592,7 @@ export const expensesApi = {
       method: e.method,
       reference: e.reference,
       description: e.description,
-      property: e.propertyName || 'Acacia House',
+      property: e.propertyName || 'Kimumu Rentals',
     }));
   },
   create: async (payload: {
@@ -480,7 +604,7 @@ export const expensesApi = {
     reference?: string;
     description?: string;
   }): Promise<Expense> => {
-    const raw = await request<any>('/expenses/', {
+    const raw = await request<ExpenseResponse>('/expenses/', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
@@ -493,7 +617,7 @@ export const expensesApi = {
       method: raw.method,
       reference: raw.reference,
       description: raw.description,
-      property: raw.propertyName || 'Acacia House',
+      property: raw.propertyName || 'Kimumu Rentals',
     };
   },
 };
@@ -513,7 +637,7 @@ export const reportsApi = {
 // 8. Settings API
 export const settingsApi = {
   get: async (): Promise<PropertySettings> => {
-    const raw = await request<any>('/settings/');
+    const raw = await request<SettingsResponse>('/settings/');
     return {
       propertyName: raw.propertyName,
       location: raw.location,
@@ -528,7 +652,7 @@ export const settingsApi = {
     };
   },
   update: async (payload: Partial<PropertySettings>): Promise<PropertySettings> => {
-    const raw = await request<any>('/settings/', {
+    const raw = await request<SettingsResponse>('/settings/', {
       method: 'PATCH',
       body: JSON.stringify(payload),
     });

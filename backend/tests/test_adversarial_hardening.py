@@ -281,10 +281,11 @@ class AdversarialHardeningTests(TestCase):
                 }, format='json')
         self.assertFalse(Expense.objects.filter(title='Failure injection').exists())
 
-    def test_future_dated_payment_currently_creates_future_month_charge(self):
+    def test_future_dated_payment_retains_surplus_as_advance_credit_without_phantom_charge(self):
         response = self.client.post('/api/v1/payments/', {
             'roomId': self.room.id, 'amount': '10000.00', 'method': 'cash',
             'reference': 'future-rent-policy', 'paymentDate': '2028-04-10',
         }, format='json')
         self.assertEqual(response.status_code, 201, response.data)
-        self.assertTrue(RentCharge.objects.filter(tenancy=self.tenancy, month='2028-04').exists())
+        self.assertFalse(RentCharge.objects.filter(tenancy=self.tenancy, month='2028-04').exists())
+        self.assertEqual(response.data['availableCredit'], 10000.0)

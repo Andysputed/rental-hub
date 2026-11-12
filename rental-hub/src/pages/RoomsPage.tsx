@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UserPlus, ChevronRight, Settings, DoorClosed, LogOut } from 'lucide-react';
-import { useRental } from '../context/RentalContext';
+import { useRental } from '../context/useRental';
 import { Badge } from '../components/common/Badge';
 import { RoomBadge } from '../components/common/RoomBadge';
 import { MoveOutModal } from '../components/common/MoveOutModal';

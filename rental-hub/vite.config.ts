@@ -10,10 +10,10 @@ export default defineConfig(({ mode }) => {
     try {
       parsedApiBase = new URL(apiBase)
     } catch {
-      throw new Error('VITE_API_BASE_URL must be an absolute HTTPS URL.')
+      throw new Error('VITE_API_BASE_URL must be an absolute URL.')
     }
-    if (parsedApiBase.protocol !== 'https:' || ['localhost', '127.0.0.1'].includes(parsedApiBase.hostname)) {
-      throw new Error('Production VITE_API_BASE_URL must use HTTPS and cannot point to localhost.')
+    if (parsedApiBase.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(parsedApiBase.hostname)) {
+      throw new Error('Production VITE_API_BASE_URL must use HTTPS unless explicitly pointed at localhost for local validation.')
     }
   }
 

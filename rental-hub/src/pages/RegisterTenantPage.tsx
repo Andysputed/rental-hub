@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, UserPlus, Info } from 'lucide-react';
-import { useRental } from '../context/RentalContext';
+import { useRental } from '../context/useRental';
 import { Badge } from '../components/common/Badge';
 import { formatKSh } from '../utils/format';
+import { getErrorMessage } from '../services/api';
 
 export const RegisterTenantPage: React.FC = () => {
   const navigate = useNavigate();
@@ -16,12 +17,20 @@ export const RegisterTenantPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [moveInDate, setMoveInDate] = useState('2026-11-01');
   const [monthlyRent, setMonthlyRent] = useState(10000);
-  const [deposit, setDeposit] = useState(10000);
+  const [depositRequired, setDepositRequired] = useState(10000);
+  const [depositPaid, setDepositPaid] = useState<number>(0);
+  const [depositMethod, setDepositMethod] = useState<'mpesa' | 'cash' | 'bank'>('mpesa');
+  const [depositReference, setDepositReference] = useState('');
+  const [isDepositWaived, setIsDepositWaived] = useState(false);
+  const [depositWaivedReason, setDepositWaivedReason] = useState('');
   const [rentDueDay, setRentDueDay] = useState(settings.defaultDueDay || 5);
   const [error, setError] = useState<string | null>(null);
 
   // Synchronize and robustly match room selection when rooms load or query params change
   useEffect(() => {
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
     if (rooms.length === 0) return;
 
     const queryRoomId = searchParams.get('roomId');
@@ -49,13 +58,18 @@ export const RegisterTenantPage: React.FC = () => {
 
     if (matchedRoom) {
       setSelectedRoomId(String(matchedRoom.id));
-      setMonthlyRent(matchedRoom.defaultRent || 10000);
-      setDeposit(matchedRoom.defaultRent || 10000);
+      const defaultRent = matchedRoom.defaultRent || 10000;
+      setMonthlyRent(defaultRent);
+      setDepositRequired(defaultRent);
     }
-  }, [rooms, searchParams]);
+    });
+    return () => { active = false; };
+  }, [rooms, searchParams, selectedRoomId]);
 
   const selectedRoom = rooms.find((r) => String(r.id) === String(selectedRoomId));
   const vacantRooms = rooms.filter((r) => r.status === 'vacant');
+
+  const outstandingDeposit = isDepositWaived ? 0 : Math.max(0, depositRequired - depositPaid);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,21 +86,47 @@ export const RegisterTenantPage: React.FC = () => {
       return;
     }
 
+    if (isDepositWaived) {
+      if (!depositWaivedReason.trim()) {
+        setError('Please provide a reason for waiving the security deposit.');
+        return;
+      }
+    } else {
+      if (depositPaid < 0) {
+        setError('Deposit paid at move-in cannot be negative.');
+        return;
+      }
+      if (depositPaid > depositRequired) {
+        setError('Deposit paid at move-in cannot exceed the required deposit amount.');
+        return;
+      }
+      if (depositPaid > 0 && depositMethod === 'mpesa' && !depositReference.trim()) {
+        setError('M-Pesa transaction reference is required when recording a deposit payment.');
+        return;
+      }
+    }
+
     try {
       await registerTenant(
         { fullName: fullName.trim(), phone: phone.trim(), email: email.trim() || undefined },
         {
           roomId: selectedRoomId,
           monthlyRent: Number(monthlyRent),
-          deposit: Number(deposit),
+          depositRequired: isDepositWaived ? 0 : Number(depositRequired),
+          depositPaid: isDepositWaived ? 0 : Number(depositPaid),
+          depositMethod: !isDepositWaived && depositPaid > 0 ? depositMethod : undefined,
+          depositReference: !isDepositWaived && depositPaid > 0 && depositReference.trim() ? depositReference.trim() : undefined,
+          depositWaived: isDepositWaived,
+          depositWaivedReason: isDepositWaived ? depositWaivedReason.trim() : undefined,
+          deposit: isDepositWaived ? 0 : Number(depositPaid),
           startDate: moveInDate,
           rentDueDay: Number(rentDueDay),
         }
       );
 
       navigate('/rooms');
-    } catch (err: any) {
-      setError(err?.message || 'Failed to register tenant');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to register tenant'));
     }
   };
 
@@ -199,8 +239,9 @@ export const RegisterTenantPage: React.FC = () => {
                 setSelectedRoomId(newId);
                 const r = rooms.find((room) => String(room.id) === String(newId));
                 if (r) {
-                  setMonthlyRent(r.defaultRent || 10000);
-                  setDeposit(r.defaultRent || 10000);
+                  const defaultRent = r.defaultRent || 10000;
+                  setMonthlyRent(defaultRent);
+                  setDepositRequired(defaultRent);
                 }
               }}
               className="w-full px-3.5 py-2.5 rounded-xl border border-[#E5E7EB] bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-700/20 focus:border-brand-700"
@@ -239,31 +280,18 @@ export const RegisterTenantPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
-                Monthly rent (KSh) <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="number"
-                required
-                min={0}
-                value={monthlyRent}
-                onChange={(e) => setMonthlyRent(Number(e.target.value))}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-[#E5E7EB] bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-700/20 focus:border-brand-700"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Deposit (KSh)</label>
-              <input
-                type="number"
-                min={0}
-                value={deposit}
-                onChange={(e) => setDeposit(Number(e.target.value))}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-[#E5E7EB] bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-700/20 focus:border-brand-700"
-              />
-            </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1">
+              Monthly rent (KSh) <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="number"
+              required
+              min={0}
+              value={monthlyRent}
+              onChange={(e) => setMonthlyRent(Number(e.target.value))}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-[#E5E7EB] bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-700/20 focus:border-brand-700"
+            />
           </div>
 
           <div>
@@ -285,6 +313,127 @@ export const RegisterTenantPage: React.FC = () => {
               Inherited from rent settings. You can change it for this tenancy.
             </p>
           </div>
+        </div>
+
+        {/* Section 3: Security Deposit */}
+        <div className="space-y-4 pt-2 border-t border-gray-100">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500">Security deposit</h2>
+            <label className="inline-flex items-center gap-2 cursor-pointer text-xs font-medium text-gray-700">
+              <input
+                type="checkbox"
+                checked={isDepositWaived}
+                onChange={(e) => {
+                  const waived = e.target.checked;
+                  setIsDepositWaived(waived);
+                  if (waived) {
+                    setDepositPaid(0);
+                  }
+                }}
+                className="w-4 h-4 text-brand-700 rounded border-gray-300 focus:ring-brand-700"
+              />
+              <span>Waive deposit</span>
+            </label>
+          </div>
+
+          {isDepositWaived ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 space-y-2">
+              <div className="text-xs font-semibold text-amber-900">
+                Security deposit requirement waived
+              </div>
+              <p className="text-[11px] text-amber-800 leading-relaxed">
+                This tenant will not be expected to pay a security deposit. Please document the justification for audit records.
+              </p>
+              <div>
+                <label className="block text-xs font-semibold text-amber-900 mb-1">
+                  Reason for waiver <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required={isDepositWaived}
+                  placeholder="e.g. Existing agreement, landlord approved exemption"
+                  value={depositWaivedReason}
+                  onChange={(e) => setDepositWaivedReason(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-amber-300 bg-white text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    Deposit required (KSh) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={0}
+                    value={depositRequired}
+                    onChange={(e) => {
+                      const req = Number(e.target.value);
+                      setDepositRequired(req);
+                      if (depositPaid > req) {
+                        setDepositPaid(req);
+                      }
+                    }}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#E5E7EB] bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-700/20 focus:border-brand-700"
+                  />
+                  <p className="text-[11px] text-gray-400 mt-1">Pre-filled with room default.</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    Paid at move-in (KSh)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={depositRequired}
+                    value={depositPaid}
+                    onChange={(e) => setDepositPaid(Number(e.target.value))}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#E5E7EB] bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-700/20 focus:border-brand-700"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Payment method
+                </label>
+                <select
+                  value={depositMethod}
+                  onChange={(e) => setDepositMethod(e.target.value as 'mpesa' | 'cash' | 'bank')}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#E5E7EB] bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-700/20 focus:border-brand-700"
+                >
+                  <option value="mpesa">M-Pesa</option>
+                  <option value="cash">Cash</option>
+                  <option value="bank">Bank</option>
+                </select>
+              </div>
+
+              {depositPaid > 0 && (
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    Deposit payment reference
+                  </label>
+                  <input
+                    type="text"
+                    value={depositReference}
+                    onChange={(e) => setDepositReference(e.target.value)}
+                    placeholder="e.g. MPESA transaction ID"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#E5E7EB] bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-700/20 focus:border-brand-700"
+                  />
+                </div>
+              )}
+
+              {outstandingDeposit > 0 && (
+                <div className="rounded-xl bg-blue-50 border border-blue-200 p-3 text-xs text-blue-900">
+                  Outstanding deposit due at move-in: <span className="font-semibold">{formatKSh(outstandingDeposit)}</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Info Box */}

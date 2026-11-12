@@ -78,12 +78,26 @@ export interface Payment {
   tenancyId: string;
   roomId: string;
   roomName?: string;
-  chargeId: string;
+  chargeId?: string | null;
   amount: number;
   date: string; // "2026-10-04"
   method: PaymentMethod;
   reference: string; // "UJ4R8K2M6P", "CASH-...", "BNK-..."
   notes?: string;
+  allocations?: Array<{ id?: string | number; chargeId: string | number; chargeMonth: string; amount: number | string; created_at?: string }>;
+  reservations?: Array<{
+    id: string | number;
+    month: string;
+    amount: number | string;
+    applied_amount: number | string;
+    released_amount: number | string;
+    remainingAmount: number | string;
+    status: string;
+    chargeId?: string | number | null;
+  }>;
+  refunds?: Array<{ id: string | number; amount: number | string; date: string; method: PaymentMethod; reference: string; reason?: string }>;
+  availableCredit?: number;
+  isReversed?: boolean;
 }
 
 export interface ReceiptData {
@@ -141,7 +155,7 @@ export interface Expense {
   method: PaymentMethod;
   reference?: string;
   description?: string;
-  property: string; // "Acacia House"
+  property: string; // Property name from settings.
 }
 
 export interface PropertySettings {
@@ -162,6 +176,7 @@ export interface DashboardMetrics {
   propertyName: string;
   totalRentCharged: number;
   totalRentReceived: number;
+  totalRefunds?: number;
   totalOutstanding: number;
   totalExpenses: number;
   netCashIncome: number;
@@ -211,6 +226,7 @@ export interface MonthlyFinancialReport {
   summary: {
     rentCharged: number;
     rentReceived: number;
+    rentRefunded?: number;
     outstandingRent: number;
     totalExpenses: number;
     netCashIncome: number;
@@ -222,6 +238,7 @@ export interface MonthlyFinancialReport {
   };
   cashMovement: {
     rentReceived: number;
+    rentRefunded?: number;
     expenses: number;
     netCashIncome: number;
   };
@@ -256,7 +273,18 @@ export interface MonthlyFinancialReport {
   reconciliationNotes: string;
 }
 
-export type DepositStatus = 'held' | 'settled' | 'refunded' | 'applied';
+export type DepositStatus = 'unpaid' | 'partially_paid' | 'held' | 'waived' | 'settled' | 'refunded' | 'applied';
+
+export interface DepositPayment {
+  id: string | number;
+  depositId: string | number;
+  amount: number;
+  paymentDate: string;
+  method: PaymentMethod;
+  reference?: string;
+  notes?: string;
+  createdAt?: string;
+}
 
 export interface DepositDeduction {
   id: string | number;
@@ -277,7 +305,13 @@ export interface Deposit {
   roomId?: string;
   roomName: string;
   roomNumber?: string;
+  requiredAmount?: number;
   amount: number;
+  totalPaid?: number;
+  outstandingBalance?: number;
+  isWaived?: boolean;
+  waivedReason?: string;
+  waivedAt?: string | null;
   receivedDate: string;
   status: DepositStatus;
   reference: string;
@@ -293,6 +327,7 @@ export interface Deposit {
   settledAt?: string | null;
   settlementNotes?: string;
   deductions: DepositDeduction[];
+  payments?: DepositPayment[];
   createdAt?: string;
   updatedAt?: string;
 }
@@ -331,6 +366,16 @@ export interface SettlementSummary {
     }>;
   };
   maxDeductionAllowed: number;
+  financialSummary?: {
+    totalRentCharged: number;
+    totalPaymentsReceived: number;
+    totalRentAllocated: number;
+    outstandingRent: number;
+    availableAdvanceCredit: number;
+    reservedFutureCredit: number;
+    refunds: number;
+    reversals: number;
+  };
 }
 
 export interface SettleDepositPayload {
@@ -346,6 +391,11 @@ export interface SettleDepositPayload {
   refundMethod?: string;
   refundReference?: string;
   refundDate?: string;
+  notes?: string;
+}
+
+export interface MoveOutRequest {
+  endDate: string;
   notes?: string;
 }
 

@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, Wrench, Zap, Droplets, Sparkles } from 'lucide-react';
-import { useRental } from '../context/RentalContext';
+import { useRental } from '../context/useRental';
 import { MonthSelector } from '../components/common/MonthSelector';
 import { formatKSh, formatDateShort, formatMonthYear } from '../utils/format';
 import type { ExpenseCategory } from '../types';

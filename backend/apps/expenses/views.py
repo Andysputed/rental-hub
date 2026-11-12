@@ -2,6 +2,7 @@ import re
 from rest_framework import mixins, viewsets
 from rest_framework.response import Response
 from django.conf import settings as django_settings
+from apps.properties.services import get_active_property_id
 from .models import Expense
 from .serializers import ExpenseSerializer
 
@@ -10,7 +11,10 @@ class ExpenseViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.Cr
     serializer_class = ExpenseSerializer
 
     def get_queryset(self):
-        qs = Expense.objects.filter(property_id=django_settings.RENTALHUB_PROPERTY_ID).select_related('property')
+        active_prop_id = get_active_property_id()
+        qs = Expense.objects.all().select_related('property')
+        if active_prop_id:
+            qs = qs.filter(property_id=active_prop_id)
 
         category = self.request.query_params.get('category')
         if category in ('maintenance', 'utilities', 'cleaning'):

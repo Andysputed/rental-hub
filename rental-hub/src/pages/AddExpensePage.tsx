@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Check, Info } from 'lucide-react';
-import { useRental } from '../context/RentalContext';
+import { useRental } from '../context/useRental';
+import { getErrorMessage } from '../services/api';
 import { formatMonthYear } from '../utils/format';
 import type { ExpenseCategory, PaymentMethod } from '../types';
 
@@ -43,8 +44,8 @@ export const AddExpensePage: React.FC = () => {
       });
 
       navigate('/expenses');
-    } catch (err: any) {
-      setError(err?.message || 'Failed to add expense');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to add expense'));
     } finally {
       setIsSubmitting(false);
     }

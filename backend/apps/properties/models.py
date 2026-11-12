@@ -3,8 +3,8 @@ from decimal import Decimal
 
 
 class Property(models.Model):
-    name = models.CharField(max_length=100, default='Acacia House')
-    location = models.CharField(max_length=200, default='Nairobi')
+    name = models.CharField(max_length=100, default='Kimumu Rentals')
+    location = models.CharField(max_length=200, default='Kimumu, Eldoret, Kenya')
     currency = models.CharField(max_length=10, default='KES')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

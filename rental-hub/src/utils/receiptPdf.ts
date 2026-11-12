@@ -2,6 +2,13 @@ import { jsPDF } from 'jspdf';
 import { formatKSh, formatDateLong, numberToWordsKSh } from './format';
 import type { Payment, Room, Tenant, PropertySettings } from '../types';
 
+export interface ReceiptAllocationItem {
+  month: string;
+  chargeAmount: number;
+  allocatedAmount: number;
+  remainingBalance: number;
+}
+
 export interface ReceiptPdfData {
   payment: Payment;
   room?: Room;
@@ -10,6 +17,9 @@ export interface ReceiptPdfData {
   chargeAmount: number;
   remainingBalance: number;
   monthName?: string;
+  allocations?: ReceiptAllocationItem[];
+  reservations?: Array<{ month: string; amount: number; status: string }>;
+  availableCredit?: number;
 }
 
 /**
@@ -58,7 +68,7 @@ export function generateReceiptPdf(data: ReceiptPdfData): jsPDF {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(16);
   doc.setTextColor(17, 24, 39); // #111827
-  doc.text(settings.propertyName || 'Acacia House', margin + 16, y + 5.5);
+  doc.text(settings.propertyName || 'Kimumu Rentals', margin + 16, y + 5.5);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
@@ -214,14 +224,22 @@ export function generateReceiptPdf(data: ReceiptPdfData): jsPDF {
   doc.setFontSize(8.5);
   doc.setTextColor(31, 41, 55);
   doc.text(tenant?.phone || 'Not recorded', col1X + 28, row3Y);
-  doc.text(settings.location || 'Nairobi, Kenya', col2X + 26, row3Y);
+  doc.text(settings.location || 'Kimumu, Eldoret, Kenya', col2X + 26, row3Y);
 
   y += cardHeight + 8;
 
   // -------------------------------------------------------------
   // RENT ALLOCATION & BALANCE RECONCILIATION
   // -------------------------------------------------------------
-  const allocHeight = 36;
+  const items = data.allocations && data.allocations.length > 0 ? data.allocations : null;
+  const resItems = data.reservations && data.reservations.length > 0 ? data.reservations : [];
+  const credit = Number(data.availableCredit || 0);
+
+  let allocHeight = 36;
+  if (items) {
+    allocHeight = 12 + items.length * 18 + resItems.length * 8 + (credit > 0 ? 8 : 0);
+  }
+
   doc.setFillColor(255, 255, 255);
   doc.setDrawColor(229, 231, 235);
   doc.setLineWidth(0.4);
@@ -234,46 +252,120 @@ export function generateReceiptPdf(data: ReceiptPdfData): jsPDF {
   doc.setDrawColor(229, 231, 235);
   doc.line(margin, y + 8, margin + contentWidth, y + 8);
 
-  const billingLabel = monthName ? `ALLOCATION · ${monthName.toUpperCase()} RENT` : 'RENT CHARGE ALLOCATION';
+  const billingLabel = items
+    ? 'RENT ALLOCATION & SETTLEMENT BREAKDOWN'
+    : monthName
+    ? `ALLOCATION · ${monthName.toUpperCase()} RENT`
+    : 'RENT CHARGE ALLOCATION';
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7.5);
   doc.setTextColor(107, 114, 128);
   doc.text(billingLabel, margin + 4, y + 5.5);
 
-  // Allocation line items
   let allocY = y + 14;
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(75, 85, 99);
-  doc.text('Monthly Rent Charge', margin + 6, allocY);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(17, 24, 39);
-  doc.text(formatKSh(chargeAmount), pageWidth - margin - 6, allocY, { align: 'right' });
+  if (items) {
+    items.forEach((item, idx) => {
+      if (idx > 0) {
+        doc.setDrawColor(243, 244, 246);
+        doc.line(margin + 4, allocY - 2, pageWidth - margin - 4, allocY - 2);
+        allocY += 2;
+      }
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(31, 41, 55);
+      doc.text(`${item.month} Rent Charge`, margin + 6, allocY);
+      doc.text(formatKSh(item.chargeAmount), pageWidth - margin - 6, allocY, { align: 'right' });
 
-  allocY += 6.5;
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(75, 85, 99);
-  doc.text('Payment Applied / Allocated', margin + 6, allocY);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(13, 92, 70); // Emerald green for payment
-  doc.text(`- ${formatKSh(payment.amount)}`, pageWidth - margin - 6, allocY, { align: 'right' });
+      allocY += 5;
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(75, 85, 99);
+      doc.text('Payment applied from this receipt', margin + 6, allocY);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(13, 92, 70);
+      doc.text(`- ${formatKSh(item.allocatedAmount)}`, pageWidth - margin - 6, allocY, { align: 'right' });
 
-  allocY += 6.5;
-  doc.setDrawColor(243, 244, 246);
-  doc.line(margin + 6, allocY - 1.5, pageWidth - margin - 6, allocY - 1.5);
+      allocY += 5;
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(75, 85, 99);
+      doc.text('Remaining balance for this period', margin + 6, allocY);
+      doc.setFont('helvetica', 'bold');
+      if (item.remainingBalance > 0) {
+        doc.setTextColor(180, 83, 9);
+        doc.text(formatKSh(item.remainingBalance), pageWidth - margin - 6, allocY, { align: 'right' });
+      } else {
+        doc.setTextColor(13, 92, 70);
+        doc.text('KSh 0  (Paid in Full)', pageWidth - margin - 6, allocY, { align: 'right' });
+      }
+      allocY += 6;
+    });
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-  doc.setTextColor(17, 24, 39);
-  doc.text('Remaining Rent Balance', margin + 6, allocY + 1);
+    resItems.forEach((r) => {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(75, 85, 99);
+      doc.text(`Future Rent Reservation · ${r.month}`, margin + 6, allocY);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(13, 92, 70);
+      doc.text(formatKSh(r.amount), pageWidth - margin - 6, allocY, { align: 'right' });
+      allocY += 6;
+    });
 
-  if (remainingBalance > 0) {
-    doc.setTextColor(180, 83, 9); // Amber
-    doc.text(formatKSh(remainingBalance), pageWidth - margin - 6, allocY + 1, { align: 'right' });
+    if (credit > 0) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(75, 85, 99);
+      doc.text('Unallocated Advance Credit (Held for future rent)', margin + 6, allocY);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(13, 92, 70);
+      doc.text(formatKSh(credit), pageWidth - margin - 6, allocY, { align: 'right' });
+      allocY += 6;
+    }
   } else {
-    doc.setTextColor(13, 92, 70); // Emerald
-    doc.text('KSh 0  (Paid in Full)', pageWidth - margin - 6, allocY + 1, { align: 'right' });
+    const applied = Math.min(Number(payment.amount), chargeAmount);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(75, 85, 99);
+    doc.text('Monthly Rent Charge', margin + 6, allocY);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(17, 24, 39);
+    doc.text(formatKSh(chargeAmount), pageWidth - margin - 6, allocY, { align: 'right' });
+
+    allocY += 6.5;
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(75, 85, 99);
+    doc.text('Payment Applied / Allocated', margin + 6, allocY);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(13, 92, 70);
+    doc.text(`- ${formatKSh(applied)}`, pageWidth - margin - 6, allocY, { align: 'right' });
+
+    allocY += 6.5;
+    doc.setDrawColor(243, 244, 246);
+    doc.line(margin + 6, allocY - 1.5, pageWidth - margin - 6, allocY - 1.5);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(17, 24, 39);
+    doc.text('Remaining Rent Balance', margin + 6, allocY + 1);
+
+    if (remainingBalance > 0) {
+      doc.setTextColor(180, 83, 9);
+      doc.text(formatKSh(remainingBalance), pageWidth - margin - 6, allocY + 1, { align: 'right' });
+    } else {
+      doc.setTextColor(13, 92, 70);
+      doc.text('KSh 0  (Paid in Full)', pageWidth - margin - 6, allocY + 1, { align: 'right' });
+    }
+
+    if (Number(payment.amount) > applied) {
+      allocY += 6.5;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(75, 85, 99);
+      doc.text('Unallocated Advance Credit', margin + 6, allocY + 1);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(13, 92, 70);
+      doc.text(formatKSh(Number(payment.amount) - applied), pageWidth - margin - 6, allocY + 1, { align: 'right' });
+    }
   }
 
   y += allocHeight + 10;
