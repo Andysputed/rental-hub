@@ -5,7 +5,7 @@ import { useRental } from '../context/useRental';
 import { getErrorMessage } from '../services/api';
 import { MonthSelector } from '../components/common/MonthSelector';
 import { Badge } from '../components/common/Badge';
-import { formatKSh, formatMonthYear, formatMonthShort } from '../utils/format';
+import { formatKSh, formatMonthYear, formatMonthShort, formatDateShort } from '../utils/format';
 
 export const RentChargesPage: React.FC = () => {
   const navigate = useNavigate();
@@ -120,7 +120,7 @@ export const RentChargesPage: React.FC = () => {
               </div>
 
               <div className="text-xs text-gray-500">
-                {tenant?.fullName} · Due {settings.defaultDueDay || 5} {formatMonthShort(selectedMonth)}
+                {tenant?.fullName} · Due {formatDateShort(charge.dueDate)}
               </div>
 
               <div className="flex items-center justify-between text-xs pt-2 border-t border-gray-100">

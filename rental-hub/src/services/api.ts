@@ -430,6 +430,7 @@ export const paymentsApi = {
     reference: string;
     paymentDate: string;
     chargeId?: string | number;
+    chargeMonth?: string;
     tenancyId?: string | number;
     allocationMode?: 'automatic' | 'manual';
     allocations?: Array<{ chargeId: string | number; amount: string | number }>;

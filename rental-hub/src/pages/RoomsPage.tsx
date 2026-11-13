@@ -6,7 +6,7 @@ import { Badge } from '../components/common/Badge';
 import { RoomBadge } from '../components/common/RoomBadge';
 import { MoveOutModal } from '../components/common/MoveOutModal';
 import { MonthSelector } from '../components/common/MonthSelector';
-import { formatKSh, formatMonthYear, formatMonthShort } from '../utils/format';
+import { formatKSh, formatMonthYear, formatMonthShort, formatDateShort } from '../utils/format';
 
 export const RoomsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -25,6 +25,8 @@ export const RoomsPage: React.FC = () => {
   const occupiedCount = rooms.filter((r) => r.status === 'occupied').length;
   const vacantCount = rooms.filter((r) => r.status === 'vacant').length;
   const occupancyPercentage = rooms.length > 0 ? Math.round((occupiedCount / rooms.length) * 100) : 0;
+  const now = new Date();
+  const today = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
 
   const filteredRooms = rooms.filter((room) => {
     if (filter === 'occupied') return room.status === 'occupied';
@@ -175,7 +177,6 @@ export const RoomsPage: React.FC = () => {
             ? rentCharges.find((c) => String(c.tenancyId) === String(tenancy.id) && c.month === selectedMonth)
             : undefined;
           const balance = charge ? charge.amount - charge.paidAmount : 0;
-          const isPaid = charge && balance === 0;
 
           if (room.status === 'vacant') {
             return (
@@ -226,12 +227,22 @@ export const RoomsPage: React.FC = () => {
               </div>
 
               <div className="flex items-center justify-between text-xs pt-2 border-t border-gray-100">
-                <span className="text-gray-500">{formatKSh(tenancy?.monthlyRent || room.defaultRent)} / month</span>
+                <span className="text-gray-500">
+                  {formatKSh(charge ? charge.amount : (tenancy?.monthlyRent || room.defaultRent))} / month
+                </span>
                 <div className="flex items-center gap-2">
-                  {isPaid ? (
-                    <span className="font-semibold text-[#0D5B46]">{formatMonthShort(selectedMonth)} paid</span>
+                  {charge ? (
+                    balance === 0 ? (
+                      <span className="font-semibold text-[#0D5B46]">{formatMonthShort(selectedMonth)} paid</span>
+                    ) : charge.dueDate <= today ? (
+                      <span className="font-semibold text-amber-text">Overdue · {formatKSh(balance)}</span>
+                    ) : (
+                      <span className="font-semibold text-gray-600">
+                        Due {formatDateShort(charge.dueDate)} · {formatKSh(balance)}
+                      </span>
+                    )
                   ) : (
-                    <span className="font-semibold text-amber-text">Overdue · {formatKSh(balance)}</span>
+                    <span className="font-semibold text-gray-400">Not charged</span>
                   )}
                   {tenancy && tenant && (
                     <button
@@ -319,7 +330,7 @@ export const RoomsPage: React.FC = () => {
                     </Badge>
                   </td>
                   <td className="py-4 px-5 text-right font-semibold text-gray-900">
-                    {(tenancy?.monthlyRent || room.defaultRent).toLocaleString('en-KE')}
+                    {(charge ? charge.amount : (tenancy?.monthlyRent || room.defaultRent)).toLocaleString('en-KE')}
                   </td>
                   <td className="py-4 px-5 text-right text-gray-600">
                     {charge ? charge.paidAmount.toLocaleString('en-KE') : '—'}
@@ -339,8 +350,10 @@ export const RoomsPage: React.FC = () => {
                     {charge ? (
                       balance === 0 ? (
                         <Badge variant="paid">Paid</Badge>
-                      ) : (
+                      ) : charge.dueDate <= today ? (
                         <Badge variant="overdue">Overdue</Badge>
+                      ) : (
+                        <Badge variant="neutral">Due {formatDateShort(charge.dueDate)}</Badge>
                       )
                     ) : (
                       <span className="text-xs text-gray-400">Not charged</span>

@@ -24,6 +24,7 @@ interface RecordPaymentInput {
   method: string;
   reference: string;
   notes?: string;
+  chargeMonth?: string;
   allocationMode?: 'automatic' | 'manual';
   allocations?: Array<{ chargeId: string; amount: string | number }>;
   reservations?: Array<{ month: string; amount: string | number }>;
@@ -239,6 +240,7 @@ export const RentalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         reference: paymentData.reference,
         paymentDate: paymentData.date,
         chargeId: paymentData.chargeId,
+        chargeMonth: paymentData.chargeMonth,
         tenancyId: paymentData.tenancyId,
         allocationMode: paymentData.allocationMode,
         allocations: paymentData.allocations,

@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Check, Smartphone, Banknote, Building2, Info } from 'lucide-react';
 import { useRental } from '../context/useRental';
-import { formatKSh, formatMonthYear, formatMonthShort } from '../utils/format';
+import { formatKSh, formatMonthYear, formatMonthShort, formatDateShort } from '../utils/format';
+import { calculateRentForMonth } from '../utils/rent';
 import type { PaymentMethod } from '../types';
 import { getErrorMessage } from '../services/api';
 
@@ -61,7 +62,7 @@ export const RecordPaymentPage: React.FC = () => {
         const remaining = charge.amount - charge.paidAmount;
         setAmount(remaining > 0 ? remaining : charge.amount);
       } else if (t) {
-        setAmount(t.monthlyRent || 10000);
+        setAmount(calculateRentForMonth(t.monthlyRent || 10000, t.startDate, selectedMonth) ?? (t.monthlyRent || 10000));
       }
     }
     });
@@ -74,9 +75,26 @@ export const RecordPaymentPage: React.FC = () => {
     ? rentCharges.find((c) => String(c.tenancyId) === String(selectedTenancy.id) && c.month === selectedMonth)
     : undefined;
 
-  const totalChargeAmount = currentCharge ? currentCharge.amount : (selectedTenancy?.monthlyRent || 10000);
+  const totalChargeAmount = currentCharge
+    ? currentCharge.amount
+    : selectedTenancy
+    ? calculateRentForMonth(selectedTenancy.monthlyRent || 10000, selectedTenancy.startDate, selectedMonth) ??
+      (selectedTenancy.monthlyRent || 10000)
+    : 10000;
   const balanceBefore = currentCharge ? totalChargeAmount - currentCharge.paidAmount : totalChargeAmount;
   const remainingBalance = Math.max(0, balanceBefore - (Number(amount) || 0));
+  const expectedDueDate = (() => {
+    if (!selectedTenancy) return '';
+    if (currentCharge) return currentCharge.dueDate;
+    const [year, month] = selectedMonth.split('-').map(Number);
+    if (!year || !month) return '';
+    const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const dueDay = Math.min(selectedTenancy.rentDueDay || 5, daysInMonth);
+    const due = new Date(Date.UTC(year, month - 1, dueDay));
+    const start = new Date(`${selectedTenancy.startDate}T00:00:00Z`);
+    if (Number.isNaN(due.getTime()) || Number.isNaN(start.getTime())) return '';
+    return (due < start ? start : due).toISOString().slice(0, 10);
+  })();
   const eligibleCharges = selectedTenancy
     ? rentCharges.filter((charge) =>
       String(charge.tenancyId) === String(selectedTenancy.id) &&
@@ -118,6 +136,7 @@ export const RecordPaymentPage: React.FC = () => {
         date: paymentDate,
         method,
         reference: reference.trim(),
+        chargeMonth: selectedMonth,
         allocationMode,
         allocations: allocationMode === 'manual'
           ? manualAllocations.filter((item) => Number(item.amount) > 0)
@@ -175,7 +194,7 @@ export const RecordPaymentPage: React.FC = () => {
                 const remaining = charge.amount - charge.paidAmount;
                 setAmount(remaining > 0 ? remaining : charge.amount);
               } else if (t) {
-                setAmount(t.monthlyRent || 10000);
+                setAmount(calculateRentForMonth(t.monthlyRent || 10000, t.startDate, selectedMonth) ?? (t.monthlyRent || 10000));
               }
             }}
             className="w-full px-3.5 py-2.5 rounded-xl border border-[#E5E7EB] bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-700/20 focus:border-brand-700"
@@ -455,7 +474,7 @@ export const RecordPaymentPage: React.FC = () => {
 
           <div className="space-y-1.5 text-xs">
             <div className="flex justify-between text-gray-600">
-              <span>Charge · due {selectedTenancy?.rentDueDay || 5} {formatMonthShort(selectedMonth)}</span>
+              <span>Charge · due {expectedDueDate ? formatDateShort(expectedDueDate) : `${selectedTenancy?.rentDueDay || 5} ${formatMonthShort(selectedMonth)}`}</span>
               <span className="font-semibold text-gray-900">{formatKSh(totalChargeAmount)}</span>
             </div>
             <div className="flex justify-between text-gray-600">

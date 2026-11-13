@@ -3,8 +3,9 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, UserPlus, Info } from 'lucide-react';
 import { useRental } from '../context/useRental';
 import { Badge } from '../components/common/Badge';
-import { formatKSh } from '../utils/format';
+import { formatKSh, formatDateShort } from '../utils/format';
 import { getErrorMessage } from '../services/api';
+import { calculateFirstMonthRent } from '../utils/rent';
 
 export const RegisterTenantPage: React.FC = () => {
   const navigate = useNavigate();
@@ -70,6 +71,12 @@ export const RegisterTenantPage: React.FC = () => {
   const vacantRooms = rooms.filter((r) => r.status === 'vacant');
 
   const outstandingDeposit = isDepositWaived ? 0 : Math.max(0, depositRequired - depositPaid);
+  const firstMonthPreview = calculateFirstMonthRent(monthlyRent, moveInDate);
+  const formatRent = (amount: number) =>
+    `KSh ${amount.toLocaleString('en-KE', {
+      minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+      maximumFractionDigits: 2,
+    })}`;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -313,6 +320,43 @@ export const RegisterTenantPage: React.FC = () => {
               Inherited from rent settings. You can change it for this tenancy.
             </p>
           </div>
+
+          {firstMonthPreview && (
+            <div className="p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-1.5 text-xs">
+              <div className="font-semibold text-gray-900">
+                First-month rent{firstMonthPreview.isProrated ? ' (prorated)' : ''}
+              </div>
+              <div className="flex justify-between text-gray-600">
+                <span>Monthly rent</span>
+                <span className="font-semibold text-gray-900">{formatRent(firstMonthPreview.monthlyRent)}</span>
+              </div>
+              <div className="flex justify-between text-gray-600">
+                <span>Move-in date</span>
+                <span className="font-semibold text-gray-900">{formatDateShort(firstMonthPreview.moveInDate)}</span>
+              </div>
+              <div className="flex justify-between text-gray-600">
+                <span>Chargeable days</span>
+                <span className="font-semibold text-gray-900">
+                  {firstMonthPreview.chargeableDays} of {firstMonthPreview.daysInMonth}
+                </span>
+              </div>
+              <div className="flex justify-between text-brand-900 font-bold pt-1 border-t border-emerald-200">
+                <span>{firstMonthPreview.monthLabel} rent</span>
+                <span>{formatRent(firstMonthPreview.firstMonthRent)}</span>
+              </div>
+              <div className="flex justify-between text-gray-600">
+                <span>From {firstMonthPreview.followingMonthLabel}</span>
+                <span className="font-semibold text-gray-900">
+                  {formatRent(firstMonthPreview.followingMonthRent)} / month
+                </span>
+              </div>
+              <p className="text-[11px] text-gray-500">
+                {firstMonthPreview.isProrated
+                  ? 'Only the remaining days of the move-in month are charged. Full monthly rent applies from the following month.'
+                  : 'Move-in falls on the first day, so the full monthly rent applies.'}
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Section 3: Security Deposit */}

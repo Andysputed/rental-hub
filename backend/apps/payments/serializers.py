@@ -7,6 +7,7 @@ from apps.properties.models import Room
 from apps.properties.services import get_active_property_id
 from apps.tenants.models import Tenant, Tenancy
 from apps.rent.models import RentCharge
+from apps.rent.services import generate_tenancy_month_charge
 from .models import (
     Payment, PaymentAllocation, Deposit, DepositPayment, DepositDeduction, ReceiptSequence,
     FutureRentReservation, PaymentRefund, PaymentReversal,
@@ -102,6 +103,7 @@ class RecordPaymentSerializer(serializers.Serializer):
     reference = serializers.CharField(max_length=100, required=True)
     paymentDate = serializers.DateField(required=True)
     chargeId = serializers.IntegerField(required=False, allow_null=True)
+    chargeMonth = serializers.RegexField(r'^\d{4}-(0[1-9]|1[0-2])$', required=False, allow_null=True)
     allocationMode = serializers.ChoiceField(choices=['automatic', 'manual'], default='automatic')
     allocations = RequestedAllocationSerializer(many=True, required=False, default=list)
     reservations = RequestedReservationSerializer(many=True, required=False, default=list)
@@ -133,6 +135,14 @@ class RecordPaymentSerializer(serializers.Serializer):
             active_tenancy = room.get_current_tenancy()
             if not active_tenancy:
                 raise serializers.ValidationError({"roomId": f"{room.name} does not have an active tenancy."})
+            tenancy = active_tenancy
+
+        charge_month = attrs.get('chargeMonth')
+        if charge_month:
+            start_month = tenancy.start_date.strftime('%Y-%m')
+            end_month = tenancy.end_date.strftime('%Y-%m') if tenancy.end_date else None
+            if charge_month < start_month or (end_month and charge_month > end_month):
+                raise serializers.ValidationError({'chargeMonth': 'Selected rent period is outside this tenancy.'})
 
         if attrs.get('allocationMode') == 'manual':
             if attrs.get('chargeId'):
@@ -152,6 +162,7 @@ class RecordPaymentSerializer(serializers.Serializer):
         reference = validated_data['reference'].strip()
         payment_date = validated_data['paymentDate']
         charge_id = validated_data.get('chargeId')
+        charge_month = validated_data.get('chargeMonth')
         notes = validated_data.get('notes', '')
         mode = validated_data.get('allocationMode', 'automatic')
         requested_allocations = validated_data.get('allocations', [])
@@ -173,6 +184,14 @@ class RecordPaymentSerializer(serializers.Serializer):
 
             start_month = tenancy.start_date.strftime('%Y-%m')
             end_month = tenancy.end_date.strftime('%Y-%m') if tenancy.end_date else None
+
+            # The move-in month is charged once, at the prorated amount. If the
+            # tenancy was registered after that month's generation run, create
+            # the first-month charge now so the payment settles it instead of
+            # becoming unallocated credit.
+            if mode == 'automatic' and charge_month and charge_month == start_month:
+                generate_tenancy_month_charge(tenancy, charge_month)
+
             primary_charge = None
             if charge_id:
                 try:

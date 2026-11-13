@@ -1,5 +1,5 @@
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 import calendar
 from django.db import transaction
 from django.db.models import Q
@@ -8,6 +8,26 @@ from apps.properties.services import get_default_property
 from apps.tenants.models import Tenancy
 from .models import RentCharge
 from apps.payments.ledger import apply_month_reservations, apply_available_advance_credit
+
+MONEY = Decimal('0.01')
+
+
+def calculate_month_charge_amount(tenancy, year: int, month_num: int):
+    """
+    Rent owed by a tenancy for one billing month.
+
+    The tenancy's start month is charged per actual calendar day, counting the
+    move-in day itself. Every later month is charged the full agreed rent.
+    Returns (amount, chargeable_days, days_in_month).
+    """
+    days_in_month = calendar.monthrange(year, month_num)[1]
+    if tenancy.start_date.year == year and tenancy.start_date.month == month_num:
+        chargeable_days = days_in_month - tenancy.start_date.day + 1
+        amount = (
+            tenancy.monthly_rent * chargeable_days / days_in_month
+        ).quantize(MONEY, rounding=ROUND_HALF_UP)
+        return amount, chargeable_days, days_in_month
+    return tenancy.monthly_rent, days_in_month, days_in_month
 
 
 @transaction.atomic
@@ -22,14 +42,15 @@ def generate_tenancy_month_charge(tenancy, month):
     if tenancy.start_date > month_end or (tenancy.end_date and tenancy.end_date < month_start):
         return None, False
     due_day = min(tenancy.rent_due_day, days_in_month)
-    due_date = date(year, month_num, due_day)
+    due_date = max(date(year, month_num, due_day), tenancy.start_date)
+    amount, _, _ = calculate_month_charge_amount(tenancy, year, month_num)
     charge, created = RentCharge.objects.get_or_create(
         tenancy=tenancy,
         month=month,
         defaults={
             'room': tenancy.room,
             'due_date': due_date,
-            'amount': tenancy.monthly_rent,
+            'amount': amount,
             'paid_amount': Decimal('0.00'),
             'status': 'unpaid',
         },

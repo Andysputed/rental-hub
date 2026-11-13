@@ -30,6 +30,9 @@ export const DashboardPage: React.FC = () => {
   const collectionRate = totalRentCharged > 0 ? Math.round((totalRentReceived / totalRentCharged) * 100) : 0;
   const overdueItems = getOverdueCharges();
   const recentPayments = payments.slice(0, 5);
+  const vacantRooms = rooms.filter((room) => room.status === 'vacant');
+  const vacantRent = vacantRooms.reduce((sum, room) => sum + (Number(room.defaultRent) || 0), 0);
+  const potentialRent = rooms.reduce((sum, room) => sum + (Number(room.defaultRent) || 0), 0);
 
   return (
     <div className="space-y-6">
@@ -247,14 +250,25 @@ export const DashboardPage: React.FC = () => {
 
           <div className="space-y-1 pt-2 border-t border-gray-100 text-xs text-gray-600">
             <div>
-              <span className="text-gray-800 font-medium">Room 06 is vacant</span> · KSh 10,000 / month
+              {vacantRooms.length === 0 ? (
+                <span className="text-gray-800 font-medium">All rooms occupied</span>
+              ) : (
+                <>
+                  <span className="text-gray-800 font-medium">
+                    {vacantRooms.map((room) => room.name).join(', ')}
+                  </span>{' '}
+                  {vacantRooms.length === 1 ? 'is vacant' : 'are vacant'} · {formatKSh(vacantRent)} / month
+                </>
+              )}
             </div>
             <div className="hidden md:flex justify-between text-gray-500 pt-1">
               <span>Occupied monthly rent</span>
               <span className="font-semibold text-gray-900">{formatKSh(totalRentCharged)}</span>
             </div>
             <div className="hidden md:block text-[11px] text-gray-400">
-              Room 06 is ready for a tenant. Potential rent at full occupancy: KSh 60,000.
+              {vacantRooms.length === 0
+                ? `All rooms are currently occupied. Potential rent at full occupancy: ${formatKSh(potentialRent)}.`
+                : `${vacantRooms.length === 1 ? `${vacantRooms[0].name} is` : `${vacantRooms.length} rooms are`} ready for a tenant. Potential rent at full occupancy: ${formatKSh(potentialRent)}.`}
             </div>
           </div>
         </div>
