@@ -4,6 +4,8 @@ Django settings for RentalHub backend.
 
 import os
 from pathlib import Path
+from urllib.parse import unquote, urlparse
+
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -76,9 +78,30 @@ TEMPLATES = [
 WSGI_APPLICATION = 'config.wsgi.application'
 
 # Database Configuration
+database_url = os.getenv('DATABASE_URL', '').strip()
 db_engine = os.getenv('DB_ENGINE', 'sqlite3').lower()
 
-if db_engine == 'postgresql':
+if database_url:
+    parsed_url = urlparse(database_url)
+    query = dict(
+        part.split('=', 1)
+        for part in parsed_url.query.split('&')
+        if '=' in part
+    )
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': unquote(parsed_url.path.lstrip('/')),
+            'USER': unquote(parsed_url.username or ''),
+            'PASSWORD': unquote(parsed_url.password or ''),
+            'HOST': parsed_url.hostname or '',
+            'PORT': str(parsed_url.port or ''),
+            # Neon requires TLS; connection query params come straight from DATABASE_URL.
+            'OPTIONS': query,
+            'CONN_MAX_AGE': 60,
+        }
+    }
+elif db_engine == 'postgresql':
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',

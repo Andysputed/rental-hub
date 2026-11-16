@@ -70,3 +70,4 @@ Desktop.ini
 # Local certificates and private keys
 *.pem
 *.key
+.neon
