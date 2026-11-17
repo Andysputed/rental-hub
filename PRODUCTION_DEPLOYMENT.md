@@ -20,9 +20,9 @@ Set secrets in the host’s secret manager. Never commit them or place them in b
 | `DJANGO_SETTINGS_MODULE` | `config.production_settings` |
 | `DEBUG` | Explicitly `false` |
 | `SECRET_KEY` | Random, unique, 50+ characters; rotate via a planned session invalidation |
-| `ALLOWED_HOSTS` | Comma-separated deployed API hostnames only |
-| `CORS_ALLOWED_ORIGINS` | Exact HTTPS frontend origins |
-| `CSRF_TRUSTED_ORIGINS` | Exact HTTPS frontend/API origins that submit cookie-authenticated requests |
+| `ALLOWED_HOSTS` | Comma-separated deployed API hostnames only (e.g. `rentalhub-api-0nll.onrender.com`) |
+| `CORS_ALLOWED_ORIGINS` | Exact HTTPS frontend origins (e.g. `https://rental-hub-nxaj.vercel.app`) |
+| `CSRF_TRUSTED_ORIGINS` | Exact HTTPS frontend/API origins that submit cookie-authenticated requests (e.g. `https://rental-hub-nxaj.vercel.app`) |
 | `DB_ENGINE` | `postgresql` |
 | `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` | Dedicated production database and non-superuser role |
 | `DB_SSLMODE` | `require` minimum; prefer `verify-full` with `DB_SSL_ROOT_CERT` |
