@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -167,6 +168,29 @@ CORS_ALLOW_CREDENTIALS = True
 # CSRF trusted origins (needed for admin and any session/cookie flows)
 CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
 CSRF_FAILURE_VIEW = 'config.middleware.csrf_failure'
+
+
+# Opt-in cross-site cookie support: set COOKIE_SAMESITE=None when the SPA and
+# API are served from different sites. Unset keeps Django's defaults untouched.
+def cookie_samesite_overrides(env):
+    value = env.get('COOKIE_SAMESITE', '').strip()
+    if not value:
+        return {}
+    samesite = {'none': 'None', 'lax': 'Lax', 'strict': 'Strict'}.get(value.lower())
+    if samesite is None:
+        raise ImproperlyConfigured('COOKIE_SAMESITE must be one of: None, Lax, Strict.')
+    overrides = {
+        'SESSION_COOKIE_SAMESITE': samesite,
+        'CSRF_COOKIE_SAMESITE': samesite,
+    }
+    if samesite == 'None':
+        # Browsers reject SameSite=None cookies that are not Secure.
+        overrides['SESSION_COOKIE_SECURE'] = True
+        overrides['CSRF_COOKIE_SECURE'] = True
+    return overrides
+
+
+globals().update(cookie_samesite_overrides(os.environ))
 
 # Local development cache. Production replaces this with a shared database cache.
 CACHES = {
