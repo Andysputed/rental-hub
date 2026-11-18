@@ -12,8 +12,9 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # .env is for local development only. Production receives configuration from
-# the hosting platform's secret/environment manager.
-if os.getenv('DJANGO_ENV', 'development').lower() != 'production':
+# the hosting platform's secret/environment manager. Staging loads its own
+# .env.staging file before importing this module.
+if os.getenv('DJANGO_ENV', 'development').lower() not in ('production', 'staging'):
     load_dotenv(BASE_DIR / '.env')
 
 SECRET_KEY = os.getenv('SECRET_KEY', 'rentalhub-default-dev-secret-key-change-in-prod')
