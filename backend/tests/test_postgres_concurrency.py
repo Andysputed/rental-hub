@@ -68,15 +68,22 @@ class PostgreSQLConcurrencyTests(TransactionTestCase):
         with ThreadPoolExecutor(max_workers=2) as pool:
             results = list(pool.map(lambda p: self.concurrent_post(barrier, p), payloads))
 
-        self.assertCountEqual([code for code, _ in results], [201, 400])
+        # Both receipts are valid; an automatic payment beyond the charge balance
+        # is intentionally kept as advance credit. What must never happen is the
+        # charge being credited twice with the same shilling.
+        self.assertEqual([code for code, _ in results], [201, 201])
         charge.refresh_from_db()
         from django.db.models import Sum
-        allocated = PaymentAllocation.objects.filter(charge=charge).aggregate(total=Sum('amount'))['total']
-        # One KES 6,000 request succeeds. The other observes only KES 4,000
-        # remaining after the row lock is released and is rejected as overpayment.
-        self.assertEqual(charge.paid_amount, Decimal('6000.00'))
+        allocations = PaymentAllocation.objects.filter(charge=charge)
+        allocated = allocations.aggregate(total=Sum('amount'))['total']
+        # One KES 6,000 request settles the charge; the other observes only
+        # KES 4,000 remaining after the row lock is released and holds the
+        # other KES 2,000 as unallocated credit.
+        self.assertEqual(charge.paid_amount, Decimal('10000.00'))
         self.assertEqual(allocated, charge.paid_amount)
-        self.assertEqual(Payment.objects.filter(reference__startswith='pg-race-').count(), 1)
+        self.assertLessEqual(allocated, charge.amount)
+        self.assertEqual(sorted(allocations.values_list('amount', flat=True)), [Decimal('4000.00'), Decimal('6000.00')])
+        self.assertEqual(Payment.objects.filter(reference__startswith='pg-race-').count(), 2)
 
     def test_concurrent_duplicate_transaction_reference_creates_one_payment(self):
         charge = RentCharge.objects.create(
