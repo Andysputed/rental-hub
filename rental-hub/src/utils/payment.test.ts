@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildPaymentPreview,
   chargeBalance,
   outstandingChargesForTenancy,
   resolveAllocationTarget,
@@ -39,4 +40,54 @@ test('allocation target is the oldest outstanding charge regardless of the selec
 test('allocation target is undefined when nothing is outstanding', () => {
   assert.equal(resolveAllocationTarget(charges, 2), undefined);
   assert.equal(resolveAllocationTarget(charges, 99), undefined);
+});
+
+test('automatic preview applies at most the target balance and holds the rest as credit', () => {
+  const target = charges[0];
+  const preview = buildPaymentPreview({
+    amount: 25000,
+    target,
+    automatic: true,
+    outstandingTotal: 1000,
+  });
+  assert.equal(preview.appliedToTarget, 1000);
+  assert.equal(preview.remainingTargetBalance, 0);
+  assert.equal(preview.advanceCredit, 24000);
+});
+
+test('automatic preview never applies more than the outstanding balance', () => {
+  const preview = buildPaymentPreview({
+    amount: 500,
+    target: charges[0],
+    automatic: true,
+    outstandingTotal: 1000,
+  });
+  assert.equal(preview.appliedToTarget, 500);
+  assert.equal(preview.remainingTargetBalance, 500);
+  assert.equal(preview.advanceCredit, 0);
+});
+
+test('manual preview only credits what was actually directed', () => {
+  const preview = buildPaymentPreview({
+    amount: 5000,
+    target: charges[0],
+    automatic: false,
+    directedTotal: 4000,
+    targetDirectedAmount: 1000,
+  });
+  assert.equal(preview.appliedToTarget, 1000);
+  assert.equal(preview.remainingTargetBalance, 0);
+  assert.equal(preview.advanceCredit, 1000);
+});
+
+test('manual preview caps the target allocation at its balance', () => {
+  const preview = buildPaymentPreview({
+    amount: 5000,
+    target: charges[0],
+    automatic: false,
+    directedTotal: 5000,
+    targetDirectedAmount: 5000,
+  });
+  assert.equal(preview.appliedToTarget, 1000);
+  assert.equal(preview.advanceCredit, 0);
 });

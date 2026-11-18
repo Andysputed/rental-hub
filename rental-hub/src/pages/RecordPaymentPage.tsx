@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Check, Smartphone, Banknote, Building2, Info } from 'lucide-react';
 import { useRental } from '../context/useRental';
-import { formatKSh, formatMonthYear, formatMonthShort, formatDateShort } from '../utils/format';
+import { formatKSh, formatMonthYear, formatDateShort } from '../utils/format';
 import { calculateRentForMonth } from '../utils/rent';
-import { resolveAllocationTarget } from '../utils/payment';
+import { buildPaymentPreview, outstandingChargesForTenancy, resolveAllocationTarget } from '../utils/payment';
 import type { PaymentMethod } from '../types';
 import { getErrorMessage } from '../services/api';
 
@@ -81,45 +81,36 @@ export const RecordPaymentPage: React.FC = () => {
   const allocationTarget = selectedTenancy
     ? resolveAllocationTarget(rentCharges, selectedTenancy.id, tenancyStartMonth)
     : undefined;
-  const currentCharge = selectedTenancy
-    ? rentCharges.find((c) => String(c.tenancyId) === String(selectedTenancy.id) && c.month === selectedMonth)
-    : undefined;
   // The backend creates a first-month charge from chargeMonth and rejects
   // periods outside the tenancy, so only send a month the tenancy can own.
   const submissionChargeMonth = allocationTarget?.month ??
     (tenancyStartMonth && selectedMonth === tenancyStartMonth ? tenancyStartMonth : undefined);
 
-  const totalChargeAmount = currentCharge
-    ? currentCharge.amount
-    : selectedTenancy
-    ? calculateRentForMonth(selectedTenancy.monthlyRent || 10000, selectedTenancy.startDate, selectedMonth) ??
-      (selectedTenancy.monthlyRent || 10000)
-    : 10000;
-  const balanceBefore = currentCharge ? totalChargeAmount - currentCharge.paidAmount : totalChargeAmount;
-  const remainingBalance = Math.max(0, balanceBefore - (Number(amount) || 0));
-  const expectedDueDate = (() => {
-    if (!selectedTenancy) return '';
-    if (currentCharge) return currentCharge.dueDate;
-    const [year, month] = selectedMonth.split('-').map(Number);
-    if (!year || !month) return '';
-    const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
-    const dueDay = Math.min(selectedTenancy.rentDueDay || 5, daysInMonth);
-    const due = new Date(Date.UTC(year, month - 1, dueDay));
-    const start = new Date(`${selectedTenancy.startDate}T00:00:00Z`);
-    if (Number.isNaN(due.getTime()) || Number.isNaN(start.getTime())) return '';
-    return (due < start ? start : due).toISOString().slice(0, 10);
-  })();
   const eligibleCharges = selectedTenancy
-    ? rentCharges.filter((charge) =>
-      String(charge.tenancyId) === String(selectedTenancy.id) &&
-      charge.month >= selectedTenancy.startDate.slice(0, 7) &&
-      Number(charge.amount) > Number(charge.paidAmount)
-    ).sort((a, b) => a.month.localeCompare(b.month))
+    ? outstandingChargesForTenancy(rentCharges, selectedTenancy.id, tenancyStartMonth)
     : [];
   const manuallyDirected = manualAllocations.reduce((sum, item) => sum + (Number(item.amount) || 0), 0) +
     reservations.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-  const outstandingEligible = eligibleCharges.reduce((sum, charge) => sum + Number(charge.amount) - Number(charge.paidAmount), 0);
-  const previewCredit = Math.max(0, (Number(amount) || 0) - (allocationMode === 'manual' ? manuallyDirected : Math.min(Number(amount) || 0, outstandingEligible)));
+  const manualTargetAllocation = allocationMode === 'manual'
+    ? manualAllocations.find((item) =>
+      Number(item.amount) > 0 && eligibleCharges.some((charge) => String(charge.id) === item.chargeId)
+    )
+    : undefined;
+  const manualTargetCharge = manualTargetAllocation
+    ? eligibleCharges.find((charge) => String(charge.id) === manualTargetAllocation.chargeId)
+    : undefined;
+  const previewTarget = allocationMode === 'automatic' ? allocationTarget : manualTargetCharge;
+  const outstandingEligible = eligibleCharges.reduce(
+    (sum, charge) => sum + Math.max(0, Number(charge.amount) - Number(charge.paidAmount)), 0
+  );
+  const preview = buildPaymentPreview({
+    amount,
+    target: previewTarget,
+    automatic: allocationMode === 'automatic',
+    directedTotal: manuallyDirected,
+    outstandingTotal: outstandingEligible,
+    targetDirectedAmount: Number(manualTargetAllocation?.amount) || 0,
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -483,39 +474,54 @@ export const RecordPaymentPage: React.FC = () => {
             </div>
           )}
           <div className="flex justify-between border-t border-gray-100 pt-2 text-xs">
-            <span>Unallocated advance credit after this receipt</span><strong>{formatKSh(previewCredit)}</strong>
+            <span>Unallocated advance credit after this receipt</span><strong>{formatKSh(preview.advanceCredit)}</strong>
           </div>
         </div>
 
-        {/* Live Calculation Box: Apply to selected month rent */}
+        {/* Live Calculation Box: applies to the charge the backend will settle first */}
         <div className="bg-white border border-[#E5E7EB] rounded-2xl p-5 shadow-2xs space-y-2.5">
-          <div className="text-sm font-bold text-gray-900">Apply to {formatMonthYear(selectedMonth)} rent</div>
-
-          <div className="space-y-1.5 text-xs">
-            <div className="flex justify-between text-gray-600">
-              <span>Charge · due {expectedDueDate ? formatDateShort(expectedDueDate) : `${selectedTenancy?.rentDueDay || 5} ${formatMonthShort(selectedMonth)}`}</span>
-              <span className="font-semibold text-gray-900">{formatKSh(totalChargeAmount)}</span>
-            </div>
-            <div className="flex justify-between text-gray-600">
-              <span>Balance before this payment</span>
-              <span className="font-semibold text-gray-900">{formatKSh(balanceBefore)}</span>
-            </div>
-            <div className="flex justify-between text-brand-700 font-medium">
-              <span>This payment</span>
-              <span>- {formatKSh(amount || 0)}</span>
-            </div>
-
-            <div className="pt-2 border-t border-gray-100 flex justify-between font-bold text-gray-900">
-              <span>Remaining balance</span>
-              <span>{formatKSh(remainingBalance)}</span>
-            </div>
+          <div className="text-sm font-bold text-gray-900">
+            {previewTarget ? `Apply to ${formatMonthYear(previewTarget.month)} rent` : 'Held as advance credit'}
           </div>
 
+          {previewTarget ? (
+            <div className="space-y-1.5 text-xs">
+              <div className="flex justify-between text-gray-600">
+                <span>Charge · due {formatDateShort(previewTarget.dueDate)}</span>
+                <span className="font-semibold text-gray-900">{formatKSh(previewTarget.amount)}</span>
+              </div>
+              <div className="flex justify-between text-gray-600">
+                <span>Balance before this payment</span>
+                <span className="font-semibold text-gray-900">{formatKSh(previewTarget.amount - previewTarget.paidAmount)}</span>
+              </div>
+              <div className="flex justify-between text-brand-700 font-medium">
+                <span>This payment</span>
+                <span>- {formatKSh(preview.appliedToTarget)}</span>
+              </div>
+
+              <div className="pt-2 border-t border-gray-100 flex justify-between font-bold text-gray-900">
+                <span>Remaining balance</span>
+                <span>{formatKSh(preview.remainingTargetBalance)}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="text-xs text-gray-600">
+              No outstanding charge for this tenancy. The full receipt is held as advance credit
+              and applied to future rent when it is charged.
+            </div>
+          )}
+
           <div className="text-[11px] text-gray-500 pt-1">
-            {remainingBalance === 0 ? (
-              <span className="text-[#0D5B46] font-medium">Full payment · Charge will be cleared.</span>
+            {!previewTarget ? (
+              <span className="text-[#0D5B46] font-medium">
+                Advance credit after this receipt: {formatKSh(preview.advanceCredit)}.
+              </span>
+            ) : preview.remainingTargetBalance === 0 ? (
+              <span className="text-[#0D5B46] font-medium">
+                Charge cleared{preview.advanceCredit > 0 ? ` · ${formatKSh(preview.advanceCredit)} held as advance credit` : '.'}
+              </span>
             ) : (
-              `Partial payment · ${formatKSh(remainingBalance)} remains on the ${formatMonthShort(selectedMonth)} charge.`
+              `Partial payment · ${formatKSh(preview.remainingTargetBalance)} remains on the ${formatMonthYear(previewTarget.month)} charge.`
             )}
           </div>
         </div>
