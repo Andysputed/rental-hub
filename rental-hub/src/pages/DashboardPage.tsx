@@ -4,7 +4,7 @@ import { Plus, ArrowRight, AlertCircle, ArrowDownLeft, FileText } from 'lucide-r
 import { useRental } from '../context/useRental';
 import { MonthSelector } from '../components/common/MonthSelector';
 import { RoomBadge } from '../components/common/RoomBadge';
-import { formatKSh, formatDateShort, formatMonthYear, formatMonthShort } from '../utils/format';
+import { formatKSh, formatDateShort, formatMonthYear, formatMonthShort, formatPaymentMethod } from '../utils/format';
 import { getWhatsAppNumber } from '../utils/phone';
 import { generateRentReminder } from '../utils/messages';
 
@@ -307,7 +307,7 @@ export const DashboardPage: React.FC = () => {
                     <div>
                       <div className="text-sm font-semibold text-gray-900">{tenant?.fullName}</div>
                       <div className="text-xs text-gray-500">
-                        {formatDateShort(p.date)} · {p.method === 'mpesa' ? 'M-Pesa' : p.method === 'cash' ? 'Cash' : 'Bank'}
+                        {formatDateShort(p.date)} · {formatPaymentMethod(p.method)}
                       </div>
                     </div>
                   </div>
@@ -345,7 +345,7 @@ export const DashboardPage: React.FC = () => {
                       </td>
                       <td className="py-3 text-gray-600">{formatDateShort(p.date)}</td>
                       <td className="py-3 text-gray-600 capitalize">
-                        {p.method === 'mpesa' ? 'M-Pesa' : p.method === 'cash' ? 'Cash' : 'Bank transfer'}
+                        {formatPaymentMethod(p.method)}
                       </td>
                       <td className="py-3 text-right font-bold text-gray-900">
                         {formatKSh(p.amount, false)}

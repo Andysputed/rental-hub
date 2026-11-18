@@ -6,6 +6,8 @@ import { Link } from 'react-router-dom';
 
 export const LoginPage: React.FC = () => {
   const { login } = useAuth();
+  const propertyName = import.meta.env.VITE_PROPERTY_NAME?.trim();
+  const propertyLocation = import.meta.env.VITE_PROPERTY_LOCATION?.trim();
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -39,7 +41,9 @@ export const LoginPage: React.FC = () => {
           </div>
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-gray-900">RentalHub</h1>
-            <p className="text-sm text-gray-500 mt-0.5">Kimumu Rentals · Landlord login</p>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {propertyName ? `${propertyName} · Landlord login` : 'Landlord login'}
+            </p>
           </div>
         </div>
 
@@ -127,7 +131,8 @@ export const LoginPage: React.FC = () => {
         </div>
 
         <p className="text-center text-[11px] text-gray-400">
-          RentalHub · Single-landlord property management · Eldoret, Kenya
+          {propertyName || 'RentalHub'} · Single-landlord property management
+          {propertyLocation ? ` · ${propertyLocation}` : ''}
         </p>
       </div>
     </div>

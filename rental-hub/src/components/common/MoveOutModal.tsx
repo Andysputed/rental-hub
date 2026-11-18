@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { useRental } from '../../context/useRental';
 import { tenanciesApi, getApiErrorDetail } from '../../services/api';
-import { formatKSh, formatDateShort, roundMoney } from '../../utils/format';
+import { formatKSh, formatDateShort, formatPaymentMethod, roundMoney } from '../../utils/format';
 import type { SettlementSummary, Deposit, PaymentMethod, MoveOutRequest } from '../../types';
 
 interface MoveOutModalProps {
@@ -498,7 +498,7 @@ export const MoveOutModal: React.FC<MoveOutModalProps> = ({
                             >
                               <option value="mpesa">M-Pesa</option>
                               <option value="cash">Cash</option>
-                              <option value="bank">Bank Transfer</option>
+                              <option value="bank">Bank transfer</option>
                             </select>
                           </div>
                           <div>
@@ -601,8 +601,8 @@ export const MoveOutModal: React.FC<MoveOutModalProps> = ({
                 {refundAmount > 0 && (
                   <div className="flex justify-between pt-1.5 text-[11px] text-gray-500">
                     <span>Refund Method</span>
-                    <span className="font-medium text-gray-800 capitalize">
-                      {refundMethod} {refundReference ? `(${refundReference})` : ''}
+                    <span className="font-medium text-gray-800">
+                      {formatPaymentMethod(refundMethod)} {refundReference ? `(${refundReference})` : ''}
                     </span>
                   </div>
                 )}

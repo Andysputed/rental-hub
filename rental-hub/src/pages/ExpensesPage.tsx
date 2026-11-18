@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, Wrench, Zap, Droplets, Sparkles } from 'lucide-react';
 import { useRental } from '../context/useRental';
 import { MonthSelector } from '../components/common/MonthSelector';
-import { formatKSh, formatDateShort, formatMonthYear } from '../utils/format';
+import { formatKSh, formatDateShort, formatMonthYear, formatPaymentMethod } from '../utils/format';
 import type { ExpenseCategory } from '../types';
 
 export const ExpensesPage: React.FC = () => {
@@ -141,7 +141,7 @@ export const ExpensesPage: React.FC = () => {
                   {formatKSh(exp.amount, false)}
                 </div>
                 <div className="text-xs text-gray-400 capitalize mt-1">
-                  {exp.method === 'mpesa' ? 'M-Pesa' : exp.method === 'cash' ? 'Cash' : 'Bank'} · KSh
+                  {formatPaymentMethod(exp.method)} · KSh
                 </div>
               </div>
             </div>

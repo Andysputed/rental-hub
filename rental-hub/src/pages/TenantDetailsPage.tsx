@@ -5,7 +5,7 @@ import { useRental } from '../context/useRental';
 import { Badge } from '../components/common/Badge';
 import { MoveOutModal } from '../components/common/MoveOutModal';
 import { RecordDepositPaymentModal } from '../components/common/RecordDepositPaymentModal';
-import { formatKSh, formatDateShort, formatMonthYear, formatMonthShort } from '../utils/format';
+import { formatKSh, formatDateShort, formatMonthYear, formatMonthShort, formatPaymentMethod } from '../utils/format';
 import { getWhatsAppNumber, normalizeKenyanPhone, isValidPhone } from '../utils/phone';
 import { generateRentReminder } from '../utils/messages';
 
@@ -568,7 +568,7 @@ export const TenantDetailsPage: React.FC = () => {
                           <div key={idx} className="flex items-center justify-between text-[11px] py-1 border-b border-gray-200/50 last:border-b-0">
                             <div>
                               <span className="font-medium text-gray-900">{formatDateShort(p.paymentDate)}</span>
-                              <span className="text-gray-400 ml-1.5 capitalize">({p.method}{p.reference ? ` · ${p.reference}` : ''})</span>
+                              <span className="text-gray-400 ml-1.5">({formatPaymentMethod(p.method)}{p.reference ? ` · ${p.reference}` : ''})</span>
                             </div>
                             <span className="font-semibold text-brand-700">{formatKSh(p.amount)}</span>
                           </div>
@@ -639,7 +639,7 @@ export const TenantDetailsPage: React.FC = () => {
               <div className="flex items-center justify-between">
                 <span className="text-lg font-bold text-gray-900">{formatKSh(p.amount)}</span>
                 <Badge variant={p.method === 'mpesa' ? 'mpesa' : p.method === 'cash' ? 'cash' : 'bank'}>
-                  {p.method === 'mpesa' ? 'M-Pesa' : p.method === 'cash' ? 'Cash' : 'Bank transfer'}
+                  {formatPaymentMethod(p.method)}
                 </Badge>
               </div>
 

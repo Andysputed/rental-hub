@@ -463,7 +463,7 @@ export const RegisterTenantPage: React.FC = () => {
                     type="text"
                     value={depositReference}
                     onChange={(e) => setDepositReference(e.target.value)}
-                    placeholder="e.g. MPESA transaction ID"
+                    placeholder="e.g. M-Pesa transaction ID"
                     className="w-full px-3.5 py-2.5 rounded-xl border border-[#E5E7EB] bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-700/20 focus:border-brand-700"
                   />
                 </div>

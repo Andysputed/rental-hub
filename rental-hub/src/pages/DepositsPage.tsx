@@ -9,7 +9,7 @@ import {
 import { useRental } from '../context/useRental';
 import { Badge } from '../components/common/Badge';
 import { MoveOutModal } from '../components/common/MoveOutModal';
-import { formatKSh, formatDateShort } from '../utils/format';
+import { formatKSh, formatDateShort, formatPaymentMethod } from '../utils/format';
 import type { Deposit, DepositStatus } from '../types';
 
 export const DepositsPage: React.FC = () => {
@@ -276,7 +276,7 @@ export const DepositsPage: React.FC = () => {
                         {deposit.refundAmount > 0 && (
                           <span>
                             Refund: <strong className="text-brand-700">{formatKSh(deposit.refundAmount)}</strong>{' '}
-                            <span className="text-gray-400 capitalize">({deposit.refundMethod || 'M-Pesa'})</span>
+                            <span className="text-gray-400">({formatPaymentMethod(deposit.refundMethod || 'mpesa')})</span>
                           </span>
                         )}
                       </div>

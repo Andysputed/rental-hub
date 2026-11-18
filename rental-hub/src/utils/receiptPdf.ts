@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf';
-import { formatKSh, formatDateLong, numberToWordsKSh } from './format';
+import { formatKSh, formatDateLong, numberToWordsKSh, formatPaymentMethod } from './format';
 import type { Payment, Room, Tenant, PropertySettings } from '../types';
 
 export interface ReceiptAllocationItem {
@@ -204,7 +204,7 @@ export function generateReceiptPdf(data: ReceiptPdfData): jsPDF {
   doc.text('Payment method:', col1X, row2Y);
   doc.text('Transaction ref:', col2X, row2Y);
 
-  const methodLabel = payment.method === 'mpesa' ? 'M-Pesa' : payment.method === 'cash' ? 'Cash' : 'Bank Transfer';
+  const methodLabel = formatPaymentMethod(payment.method);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.setTextColor(17, 24, 39);

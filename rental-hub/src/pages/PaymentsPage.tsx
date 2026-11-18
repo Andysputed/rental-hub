@@ -4,7 +4,7 @@ import { Plus, FileText, ChevronRight, Inbox } from 'lucide-react';
 import { useRental } from '../context/useRental';
 import { MonthSelector } from '../components/common/MonthSelector';
 import { Badge } from '../components/common/Badge';
-import { formatKSh, formatDateShort, formatMonthYear } from '../utils/format';
+import { formatKSh, formatDateShort, formatMonthYear, formatPaymentMethod } from '../utils/format';
 import type { PaymentMethod } from '../types';
 
 export const PaymentsPage: React.FC = () => {
@@ -171,7 +171,7 @@ export const PaymentsPage: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <span className="text-lg font-bold text-gray-900">{formatKSh(p.amount)}</span>
                   <Badge variant={p.method === 'mpesa' ? 'mpesa' : p.method === 'cash' ? 'cash' : 'bank'}>
-                    {p.method === 'mpesa' ? 'M-Pesa' : p.method === 'cash' ? 'Cash' : 'Bank transfer'}
+                    {formatPaymentMethod(p.method)}
                   </Badge>
                 </div>
 

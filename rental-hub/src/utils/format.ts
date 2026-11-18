@@ -13,6 +13,14 @@ export function formatKSh(amount: number, includePrefix = true): string {
   return includePrefix ? `KSh ${formatted}` : formatted;
 }
 
+export function formatPaymentMethod(method: string | null | undefined): string {
+  const key = String(method ?? '').trim().toLowerCase().replace(/[^a-z]/g, '');
+  if (key === 'mpesa') return 'M-Pesa';
+  if (key === 'cash') return 'Cash';
+  if (key === 'bank') return 'Bank transfer';
+  return String(method ?? '').trim();
+}
+
 export function getCurrentMonth(): string {
   const now = new Date();
   const year = now.getFullYear();

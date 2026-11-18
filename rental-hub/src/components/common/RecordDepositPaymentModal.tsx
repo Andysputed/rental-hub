@@ -186,7 +186,7 @@ export const RecordDepositPaymentModal: React.FC<RecordDepositPaymentModalProps>
                   >
                     <option value="mpesa">M-Pesa</option>
                     <option value="cash">Cash</option>
-                    <option value="bank">Bank Transfer</option>
+                    <option value="bank">Bank transfer</option>
                   </select>
                 </div>
 

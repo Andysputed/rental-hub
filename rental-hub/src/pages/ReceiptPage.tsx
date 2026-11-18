@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, Download, CheckCircle2, Home, Check, X, Copy } from 'lucide-react';
 import { useRental } from '../context/useRental';
 import { Badge } from '../components/common/Badge';
-import { formatKSh, formatDateShort, numberToWordsKSh, formatMonthYear } from '../utils/format';
+import { formatKSh, formatDateShort, numberToWordsKSh, formatMonthYear, formatPaymentMethod } from '../utils/format';
 import { getWhatsAppNumber } from '../utils/phone';
 import { generateReceiptShareMessage } from '../utils/messages';
 import { downloadReceiptPdf, getReceiptPdfFile, type ReceiptPdfData } from '../utils/receiptPdf';
@@ -316,7 +316,7 @@ export const ReceiptPage: React.FC = () => {
           <div className="flex justify-between py-1.5">
             <span className="text-gray-500">Payment method</span>
             <span className="font-semibold text-gray-900 capitalize">
-              {payment.method === 'mpesa' ? 'M-Pesa' : payment.method === 'cash' ? 'Cash' : 'Bank transfer'}
+              {formatPaymentMethod(payment.method)}
             </span>
           </div>
           <div className="flex justify-between py-1.5">

@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { formatKSh, numberToWordsKSh, roundMoney } from './format.ts';
+import { formatKSh, formatPaymentMethod, numberToWordsKSh, roundMoney } from './format.ts';
 
 test('roundMoney keeps cents intact', () => {
   assert.equal(roundMoney(5866.67), 5866.67);
@@ -50,4 +50,12 @@ test('numberToWordsKSh includes cents instead of silently rounding them away', (
     'Kenyan Shillings five thousand eight hundred sixty six and 67/100',
   );
   assert.equal(numberToWordsKSh(0.5), 'Kenyan Shillings zero and 50/100');
+});
+
+test('formatPaymentMethod presents M-Pesa consistently', () => {
+  assert.equal(formatPaymentMethod('mpesa'), 'M-Pesa');
+  assert.equal(formatPaymentMethod('M-PESA'), 'M-Pesa');
+  assert.equal(formatPaymentMethod('cash'), 'Cash');
+  assert.equal(formatPaymentMethod('bank'), 'Bank transfer');
+  assert.equal(formatPaymentMethod(''), '');
 });
