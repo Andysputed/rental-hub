@@ -238,6 +238,28 @@ class FirstMonthProrationTests(TestCase):
         self.assertEqual(response.status_code, 400, response.data)
         self.assertIn('chargeMonth', response.data)
 
+    def test_payment_without_charge_month_allocates_the_oldest_outstanding_charge(self):
+        tenancy = self.make_tenancy(date(2026, 11, 13), '8500.00')
+        generate_monthly_charges('2026-11', self.property)
+        generate_monthly_charges('2026-12', self.property)
+        response = self.client.post('/api/v1/payments/', {
+            'tenancyId': tenancy.id, 'roomId': self.room.id,
+            'amount': '5100.00', 'method': 'mpesa',
+            'reference': 'PRORATION-NO-MONTH', 'paymentDate': '2026-12-10',
+            'allocationMode': 'automatic',
+        }, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+
+        november = self.charge(tenancy, '2026-11')
+        december = self.charge(tenancy, '2026-12')
+        november.refresh_from_db()
+        december.refresh_from_db()
+        self.assertEqual(november.paid_amount, Decimal('5100.00'))
+        self.assertEqual(november.balance, Decimal('0.00'))
+        self.assertEqual(december.paid_amount, Decimal('0.00'))
+        self.assertEqual(december.balance, Decimal('8500.00'))
+        self.assertEqual(response.data['allocations'][0]['chargeMonth'], '2026-11')
+
     def test_prorated_charge_is_returned_by_charges_api_in_its_billing_month(self):
         tenancy = self.make_tenancy(date(2026, 11, 13), '8500.00')
         generate_monthly_charges('2026-11', self.property)

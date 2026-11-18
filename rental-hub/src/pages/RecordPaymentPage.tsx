@@ -4,6 +4,7 @@ import { ArrowLeft, Check, Smartphone, Banknote, Building2, Info } from 'lucide-
 import { useRental } from '../context/useRental';
 import { formatKSh, formatMonthYear, formatMonthShort, formatDateShort } from '../utils/format';
 import { calculateRentForMonth } from '../utils/rent';
+import { resolveAllocationTarget } from '../utils/payment';
 import type { PaymentMethod } from '../types';
 import { getErrorMessage } from '../services/api';
 
@@ -58,11 +59,16 @@ export const RecordPaymentPage: React.FC = () => {
       setSelectedRoomId(rid);
       const t = tenancies.find((ten) => String(ten.roomId) === rid && ten.status === 'active');
       const charge = t ? rentCharges.find((c) => String(c.tenancyId) === String(t.id) && c.month === selectedMonth) : undefined;
+      const oldestOutstanding = t
+        ? resolveAllocationTarget(rentCharges, t.id, t.startDate.slice(0, 7))
+        : undefined;
       if (charge) {
         const remaining = charge.amount - charge.paidAmount;
         setAmount(remaining > 0 ? remaining : charge.amount);
+      } else if (oldestOutstanding) {
+        setAmount(oldestOutstanding.amount - oldestOutstanding.paidAmount);
       } else if (t) {
-        setAmount(calculateRentForMonth(t.monthlyRent || 10000, t.startDate, selectedMonth) ?? (t.monthlyRent || 10000));
+        setAmount(calculateRentForMonth(t.monthlyRent || 10000, t.startDate, selectedMonth) ?? 0);
       }
     }
     });
@@ -71,9 +77,17 @@ export const RecordPaymentPage: React.FC = () => {
 
   const selectedTenancy = tenancies.find((t) => String(t.roomId) === String(selectedRoomId) && t.status === 'active');
   const selectedTenant = selectedTenancy ? tenants.find((t) => String(t.id) === String(selectedTenancy.tenantId)) : undefined;
+  const tenancyStartMonth = selectedTenancy?.startDate.slice(0, 7);
+  const allocationTarget = selectedTenancy
+    ? resolveAllocationTarget(rentCharges, selectedTenancy.id, tenancyStartMonth)
+    : undefined;
   const currentCharge = selectedTenancy
     ? rentCharges.find((c) => String(c.tenancyId) === String(selectedTenancy.id) && c.month === selectedMonth)
     : undefined;
+  // The backend creates a first-month charge from chargeMonth and rejects
+  // periods outside the tenancy, so only send a month the tenancy can own.
+  const submissionChargeMonth = allocationTarget?.month ??
+    (tenancyStartMonth && selectedMonth === tenancyStartMonth ? tenancyStartMonth : undefined);
 
   const totalChargeAmount = currentCharge
     ? currentCharge.amount
@@ -136,7 +150,7 @@ export const RecordPaymentPage: React.FC = () => {
         date: paymentDate,
         method,
         reference: reference.trim(),
-        chargeMonth: selectedMonth,
+        chargeMonth: submissionChargeMonth,
         allocationMode,
         allocations: allocationMode === 'manual'
           ? manualAllocations.filter((item) => Number(item.amount) > 0)
@@ -190,11 +204,16 @@ export const RecordPaymentPage: React.FC = () => {
               setSelectedRoomId(e.target.value);
               const t = tenancies.find((ten) => String(ten.roomId) === String(e.target.value) && ten.status === 'active');
               const charge = t ? rentCharges.find((c) => String(c.tenancyId) === String(t.id) && c.month === selectedMonth) : undefined;
+              const oldestOutstanding = t
+                ? resolveAllocationTarget(rentCharges, t.id, t.startDate.slice(0, 7))
+                : undefined;
               if (charge) {
                 const remaining = charge.amount - charge.paidAmount;
                 setAmount(remaining > 0 ? remaining : charge.amount);
+              } else if (oldestOutstanding) {
+                setAmount(oldestOutstanding.amount - oldestOutstanding.paidAmount);
               } else if (t) {
-                setAmount(calculateRentForMonth(t.monthlyRent || 10000, t.startDate, selectedMonth) ?? (t.monthlyRent || 10000));
+                setAmount(calculateRentForMonth(t.monthlyRent || 10000, t.startDate, selectedMonth) ?? 0);
               }
             }}
             className="w-full px-3.5 py-2.5 rounded-xl border border-[#E5E7EB] bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-700/20 focus:border-brand-700"
