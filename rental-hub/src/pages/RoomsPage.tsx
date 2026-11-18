@@ -330,17 +330,17 @@ export const RoomsPage: React.FC = () => {
                     </Badge>
                   </td>
                   <td className="py-4 px-5 text-right font-semibold text-gray-900">
-                    {(charge ? charge.amount : (tenancy?.monthlyRent || room.defaultRent)).toLocaleString('en-KE')}
+                    {formatKSh(charge ? charge.amount : (tenancy?.monthlyRent || room.defaultRent), false)}
                   </td>
                   <td className="py-4 px-5 text-right text-gray-600">
-                    {charge ? charge.paidAmount.toLocaleString('en-KE') : '—'}
+                    {charge ? formatKSh(charge.paidAmount, false) : '—'}
                   </td>
                   <td className="py-4 px-5 text-right font-semibold">
                     {charge ? (
                       balance === 0 ? (
                         <span className="text-gray-900">0</span>
                       ) : (
-                        <span className="text-amber-text">{balance.toLocaleString('en-KE')}</span>
+                        <span className="text-amber-text">{formatKSh(balance, false)}</span>
                       )
                     ) : (
                       <span className="text-gray-400">—</span>
@@ -405,11 +405,11 @@ export const RoomsPage: React.FC = () => {
           </div>
           <div className="flex items-center gap-6">
             <div>
-              Received <span className="font-semibold text-gray-900">{totalRentReceived.toLocaleString('en-KE')}</span>
+              Received <span className="font-semibold text-gray-900">{formatKSh(totalRentReceived, false)}</span>
             </div>
             <div>
               Outstanding{' '}
-              <span className="font-semibold text-amber-text">{totalOutstanding.toLocaleString('en-KE')}</span>
+              <span className="font-semibold text-amber-text">{formatKSh(totalOutstanding, false)}</span>
             </div>
           </div>
         </div>

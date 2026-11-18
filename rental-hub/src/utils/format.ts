@@ -4,7 +4,12 @@ export function roundMoney(amount: number): number {
 }
 
 export function formatKSh(amount: number, includePrefix = true): string {
-  const formatted = Math.round(amount).toLocaleString('en-KE');
+  const rounded = roundMoney(amount);
+  const hasCents = Math.abs(rounded % 1) > 0;
+  const formatted = rounded.toLocaleString('en-KE', {
+    minimumFractionDigits: hasCents ? 2 : 0,
+    maximumFractionDigits: 2,
+  });
   return includePrefix ? `KSh ${formatted}` : formatted;
 }
 
@@ -90,9 +95,16 @@ export function numberToWordsKSh(num: number): string {
     return result.trim();
   }
 
-  if (num === 0) return 'Kenyan Shillings zero';
+  const rounded = roundMoney(num);
+  const whole = Math.floor(rounded);
+  const cents = Math.round((rounded - whole) * 100);
+  const centWords = cents > 0 ? ` and ${String(cents).padStart(2, '0')}/100` : '';
 
-  let remaining = Math.round(num);
+  if (whole === 0) {
+    return `Kenyan Shillings zero${centWords}`;
+  }
+
+  let remaining = whole;
   let words = '';
 
   if (remaining >= 1000000) {
@@ -109,5 +121,5 @@ export function numberToWordsKSh(num: number): string {
     words += convertLessThanOneThousand(remaining);
   }
 
-  return `Kenyan Shillings ${words.trim()}`;
+  return `Kenyan Shillings ${words.trim()}${centWords}`;
 }

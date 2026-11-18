@@ -72,11 +72,6 @@ export const RegisterTenantPage: React.FC = () => {
 
   const outstandingDeposit = isDepositWaived ? 0 : Math.max(0, depositRequired - depositPaid);
   const firstMonthPreview = calculateFirstMonthRent(monthlyRent, moveInDate);
-  const formatRent = (amount: number) =>
-    `KSh ${amount.toLocaleString('en-KE', {
-      minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
-      maximumFractionDigits: 2,
-    })}`;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -329,7 +324,7 @@ export const RegisterTenantPage: React.FC = () => {
               </div>
               <div className="flex justify-between text-gray-600">
                 <span>Monthly rent</span>
-                <span className="font-semibold text-gray-900">{formatRent(firstMonthPreview.monthlyRent)}</span>
+                <span className="font-semibold text-gray-900">{formatKSh(firstMonthPreview.monthlyRent)}</span>
               </div>
               <div className="flex justify-between text-gray-600">
                 <span>Move-in date</span>
@@ -343,12 +338,12 @@ export const RegisterTenantPage: React.FC = () => {
               </div>
               <div className="flex justify-between text-brand-900 font-bold pt-1 border-t border-emerald-200">
                 <span>{firstMonthPreview.monthLabel} rent</span>
-                <span>{formatRent(firstMonthPreview.firstMonthRent)}</span>
+                <span>{formatKSh(firstMonthPreview.firstMonthRent)}</span>
               </div>
               <div className="flex justify-between text-gray-600">
                 <span>From {firstMonthPreview.followingMonthLabel}</span>
                 <span className="font-semibold text-gray-900">
-                  {formatRent(firstMonthPreview.followingMonthRent)} / month
+                  {formatKSh(firstMonthPreview.followingMonthRent)} / month
                 </span>
               </div>
               <p className="text-[11px] text-gray-500">

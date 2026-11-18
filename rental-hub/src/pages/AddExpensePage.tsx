@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Check, Info } from 'lucide-react';
 import { useRental } from '../context/useRental';
 import { getErrorMessage } from '../services/api';
-import { formatMonthYear } from '../utils/format';
+import { formatKSh, formatMonthYear } from '../utils/format';
 import type { ExpenseCategory, PaymentMethod } from '../types';
 
 export const AddExpensePage: React.FC = () => {
@@ -192,7 +192,7 @@ export const AddExpensePage: React.FC = () => {
             <span className="font-semibold text-gray-900">{formatMonthYear(date ? date.slice(0, 7) : selectedMonth)}</span>
           </div>
           <div className="text-[11px] text-gray-400 pt-1 border-t border-gray-100">
-            This draft is not included in the KSh {Math.round(totalExpenses).toLocaleString('en-KE')} expense total until saved.
+            This draft is not included in the {formatKSh(totalExpenses)} expense total until saved.
           </div>
         </div>
 

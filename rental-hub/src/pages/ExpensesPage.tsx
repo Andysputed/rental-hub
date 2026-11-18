@@ -138,7 +138,7 @@ export const ExpensesPage: React.FC = () => {
 
               <div className="text-right">
                 <div className="text-sm font-bold text-gray-900">
-                  {Math.round(exp.amount).toLocaleString('en-KE')}
+                  {formatKSh(exp.amount, false)}
                 </div>
                 <div className="text-xs text-gray-400 capitalize mt-1">
                   {exp.method === 'mpesa' ? 'M-Pesa' : exp.method === 'cash' ? 'Cash' : 'Bank'} · KSh

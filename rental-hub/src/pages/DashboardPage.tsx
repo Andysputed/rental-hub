@@ -97,7 +97,7 @@ export const DashboardPage: React.FC = () => {
           <div>
             <div className="text-xs font-medium text-gray-500">Outstanding rent</div>
             <div className="text-3xl font-bold mt-1 tracking-tight text-gray-900">
-              {Math.round(totalOutstanding).toLocaleString('en-KE')}
+              {formatKSh(totalOutstanding, false)}
             </div>
           </div>
           <div className="text-xs text-amber-text font-medium mt-3">
@@ -123,7 +123,7 @@ export const DashboardPage: React.FC = () => {
           <div>
             <div className="text-xs font-medium text-gray-500">Net cash income</div>
             <div className="text-3xl font-bold mt-1 tracking-tight text-gray-900">
-              {Math.round(netCashIncome).toLocaleString('en-KE')}
+              {formatKSh(netCashIncome, false)}
             </div>
           </div>
           <div className="text-xs text-gray-500 font-medium mt-3">
@@ -348,7 +348,7 @@ export const DashboardPage: React.FC = () => {
                         {p.method === 'mpesa' ? 'M-Pesa' : p.method === 'cash' ? 'Cash' : 'Bank transfer'}
                       </td>
                       <td className="py-3 text-right font-bold text-gray-900">
-                        {Math.round(p.amount).toLocaleString('en-KE')}
+                        {formatKSh(p.amount, false)}
                       </td>
                       <td className="py-3 text-right">
                         <span className="inline-flex text-brand-700 hover:text-[#0D3F34] p-1">

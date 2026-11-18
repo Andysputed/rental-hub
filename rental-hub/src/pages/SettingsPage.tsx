@@ -4,7 +4,7 @@ import { ArrowLeft, Check, Lock, Calendar, ArrowRight, CheckCircle2 } from 'luci
 import { useRental } from '../context/useRental';
 import { getErrorMessage } from '../services/api';
 import { Badge } from '../components/common/Badge';
-import { formatMonthYear } from '../utils/format';
+import { formatKSh, formatMonthYear } from '../utils/format';
 import type { Room } from '../types';
 
 export const SettingsPage: React.FC = () => {
@@ -276,7 +276,7 @@ export const SettingsPage: React.FC = () => {
               <span>
                 Potential · {rooms.length} {rooms.length === 1 ? 'room' : 'rooms'}
               </span>
-              <span>KSh {potentialRent.toLocaleString('en-KE')}</span>
+              <span>{formatKSh(potentialRent)}</span>
             </div>
           )}
         </div>
