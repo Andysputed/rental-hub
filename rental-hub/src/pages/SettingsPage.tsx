@@ -5,37 +5,47 @@ import { useRental } from '../context/useRental';
 import { getErrorMessage } from '../services/api';
 import { Badge } from '../components/common/Badge';
 import { formatMonthYear } from '../utils/format';
+import type { Room } from '../types';
 
 export const SettingsPage: React.FC = () => {
   const navigate = useNavigate();
-  const { settings, rooms, updateSettings, generateMonthlyCharges, selectedMonth } = useRental();
+  const { settings, rooms, isLoading, updateSettings, generateMonthlyCharges, selectedMonth } = useRental();
 
   const [autoGen, setAutoGen] = useState(settings.autoGenerateCharges);
   const [dueDay, setDueDay] = useState(settings.defaultDueDay);
   const [landlordPhone, setLandlordPhone] = useState(settings.landlordPhone || '');
   const [landlordEmail, setLandlordEmail] = useState(settings.landlordEmail || '');
-  const [roomRents, setRoomRents] = useState<Record<string, number>>({
-    '01': settings.roomRents['01'] || 10000,
-    '02': settings.roomRents['02'] || 10000,
-    '03': settings.roomRents['03'] || 10000,
-    '04': settings.roomRents['04'] || 10000,
-    '05': settings.roomRents['05'] || 10000,
-    '06': settings.roomRents['06'] || 10000,
-  });
+  // Only user edits are stored; each room falls back to its own default_rent from the API.
+  const [roomRentEdits, setRoomRentEdits] = useState<Record<string, string>>({});
 
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
-  const potentialRent = Object.values(roomRents).reduce((sum, r) => sum + (Number(r) || 0), 0);
+  const rentValueFor = (room: Room) => roomRentEdits[room.number] ?? String(room.defaultRent);
+
+  const rentAmountFor = (room: Room) => {
+    const amount = Number(rentValueFor(room));
+    return Number.isFinite(amount) && amount > 0 ? amount : 0;
+  };
+
+  const potentialRent = rooms.reduce((sum, room) => sum + rentAmountFor(room), 0);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    const invalidRoom = rooms.find((room) => rentAmountFor(room) === 0);
+    if (invalidRoom) {
+      setSavedMessage(`Enter a monthly rent greater than zero for ${invalidRoom.name}.`);
+      setTimeout(() => setSavedMessage(null), 4000);
+      return;
+    }
     try {
       await updateSettings({
         autoGenerateCharges: autoGen,
         defaultDueDay: Number(dueDay),
         landlordPhone: landlordPhone.trim(),
         landlordEmail: landlordEmail.trim(),
-        roomRents,
+        roomRents: Object.fromEntries(
+          rooms.map((room) => [room.number, rentAmountFor(room)])
+        ),
       });
       setSavedMessage('Settings saved successfully');
       setTimeout(() => setSavedMessage(null), 3000);
@@ -222,33 +232,52 @@ export const SettingsPage: React.FC = () => {
           <h2 className="text-sm font-bold text-gray-900">Room rents</h2>
           <p className="text-xs text-gray-500">Monthly rent in KSh. Changes apply to future charges.</p>
 
-          <div className="space-y-2.5 pt-1">
-            {rooms.map((room) => (
-              <div key={room.id} className="flex items-center justify-between">
-                <div>
-                  <div className="text-xs font-bold text-gray-900">{room.name}</div>
-                  <div className="text-[11px] text-gray-400 capitalize">{room.status}</div>
-                </div>
-                <input
-                  type="number"
-                  min={0}
-                  value={roomRents[room.number] || 10000}
-                  onChange={(e) =>
-                    setRoomRents({
-                      ...roomRents,
-                      [room.number]: Number(e.target.value),
-                    })
-                  }
-                  className="w-28 px-3 py-1.5 rounded-lg border border-[#E5E7EB] text-right text-xs font-semibold text-gray-900 focus:outline-none focus:ring-1 focus:ring-brand-700"
-                />
+          {rooms.length === 0 ? (
+            <div className="pt-1">
+              <div className="rounded-xl border border-dashed border-[#E5E7EB] px-3.5 py-5 text-center">
+                <p className="text-xs font-semibold text-gray-700">
+                  {isLoading ? 'Loading rooms…' : 'No rooms registered yet'}
+                </p>
+                {!isLoading && (
+                  <p className="text-[11px] text-gray-400 mt-1">
+                    Add a room to configure its individual monthly rent.
+                  </p>
+                )}
               </div>
-            ))}
-          </div>
+            </div>
+          ) : (
+            <div className="space-y-2.5 pt-1">
+              {rooms.map((room) => (
+                <div key={room.id} className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-bold text-gray-900">{room.name}</div>
+                    <div className="text-[11px] text-gray-400 capitalize">{room.status}</div>
+                  </div>
+                  <input
+                    type="number"
+                    min={1}
+                    value={rentValueFor(room)}
+                    onChange={(e) =>
+                      setRoomRentEdits((edits) => ({
+                        ...edits,
+                        [room.number]: e.target.value,
+                      }))
+                    }
+                    className="w-28 px-3 py-1.5 rounded-lg border border-[#E5E7EB] text-right text-xs font-semibold text-gray-900 focus:outline-none focus:ring-1 focus:ring-brand-700"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
 
-          <div className="pt-3 border-t border-gray-100 flex items-center justify-between text-xs font-bold text-gray-900">
-            <span>Potential · 6 occupied rooms</span>
-            <span>KSh {potentialRent.toLocaleString('en-KE')}</span>
-          </div>
+          {rooms.length > 0 && (
+            <div className="pt-3 border-t border-gray-100 flex items-center justify-between text-xs font-bold text-gray-900">
+              <span>
+                Potential · {rooms.length} {rooms.length === 1 ? 'room' : 'rooms'}
+              </span>
+              <span>KSh {potentialRent.toLocaleString('en-KE')}</span>
+            </div>
+          )}
         </div>
 
         {/* Submit */}
