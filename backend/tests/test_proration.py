@@ -139,6 +139,20 @@ class FirstMonthProrationTests(TestCase):
         self.assertEqual(october.amount, Decimal('5161.29'))
         self.assertEqual(self.charge(tenancy, '2026-11').amount, Decimal('10000.00'))
 
+    def test_room_default_rent_change_does_not_alter_agreed_tenancy_rent(self):
+        tenancy = self.make_tenancy(date(2026, 11, 1))
+        generate_monthly_charges('2026-11', self.property)
+
+        self.room.default_rent = Decimal('20000.00')
+        self.room.save(update_fields=['default_rent'])
+
+        tenancy.refresh_from_db()
+        self.assertEqual(tenancy.monthly_rent, Decimal('10000.00'))
+        self.assertEqual(self.charge(tenancy, '2026-11').amount, Decimal('10000.00'))
+
+        generate_monthly_charges('2026-12', self.property)
+        self.assertEqual(self.charge(tenancy, '2026-12').amount, Decimal('10000.00'))
+
     def test_future_start_tenancy_is_not_charged_before_it_starts(self):
         tenancy = self.make_tenancy(date(2026, 12, 10))
         created, _, _ = generate_monthly_charges('2026-11', self.property)

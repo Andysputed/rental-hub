@@ -161,6 +161,25 @@ To point the backend to a live PostgreSQL 16 database:
 
 ---
 
+## 🧪 Isolated Staging Environment
+
+Full end-to-end testing runs against a dedicated local PostgreSQL cluster on
+`127.0.0.1:55432` using `config.staging_settings`. It never connects to the
+production Neon database and refuses hosted or non-loopback hosts.
+
+```bash
+bash scripts/staging-db.sh bootstrap   # init + migrate + seed + verify
+bash scripts/staging-db.sh seed        # reset to the canonical fictional dataset
+bash scripts/staging-db.sh verify      # financial integrity checks
+bash scripts/staging-db.sh test        # Django suite on the staging cluster
+bash scripts/staging-db.sh stop
+```
+
+See [STAGING.md](STAGING.md) for the architecture, isolation guards, dataset, login
+and known issues.
+
+---
+
 ## 🧪 Testing & Verification
 
 ### Running Backend Tests
