@@ -10,7 +10,8 @@ import {
   expensesApi,
   settingsApi,
 } from '../services/api';
-import { getCurrentMonth } from '../utils/format';
+import { getCurrentMonth, roundMoney } from '../utils/format';
+import { sumMonthlyReceipts, sumMonthlyRefunds } from '../utils/payment';
 import { getErrorMessage } from '../services/api';
 import { RentalContext } from './rentalContextState';
 
@@ -218,11 +219,12 @@ export const RentalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const now = new Date();
   const localToday = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
   const totalRentCharged = currentMonthCharges.reduce((acc, c) => acc + c.amount, 0);
-  const totalRentReceived = currentMonthCharges.reduce((acc, c) => acc + c.paidAmount, 0);
+  const totalRentReceived = sumMonthlyReceipts(payments, selectedMonth);
+  const totalRefunded = sumMonthlyRefunds(payments, selectedMonth);
   const totalOutstanding = currentMonthCharges.reduce((acc, c) => acc + (c.amount - c.paidAmount), 0);
 
   const totalExpenses = expenses.reduce((acc, e) => acc + e.amount, 0);
-  const netCashIncome = totalRentReceived - totalExpenses;
+  const netCashIncome = roundMoney(totalRentReceived - totalRefunded - totalExpenses);
 
   const occupancyCount = rooms.filter((r) => r.status === 'occupied').length;
   const occupancyPercentage = rooms.length > 0 ? Math.round((occupancyCount / rooms.length) * 100) : 0;

@@ -6,6 +6,8 @@ import {
   chargeBalance,
   outstandingChargesForTenancy,
   resolveAllocationTarget,
+  sumMonthlyReceipts,
+  sumMonthlyRefunds,
   type ChargeLike,
 } from './payment.ts';
 
@@ -102,5 +104,45 @@ test('preview preserves cent precision for a partial cent payment', () => {
   assert.equal(preview.appliedToTarget, 5866.67);
   assert.equal(preview.remainingTargetBalance, 4133.33);
   assert.equal(preview.advanceCredit, 0);
+});
+
+const cash: Array<{ amount: number; date: string; isReversed?: boolean; refunds?: Array<{ amount: number; date: string }> }> = [
+  { amount: 10000, date: '2026-10-02' },
+  { amount: 7500, date: '2026-10-04' },
+  { amount: 6000, date: '2026-10-08' },
+  { amount: 1000, date: '2026-10-20' },
+  { amount: 12000, date: '2026-09-30' },
+  { amount: 4000, date: '2026-10-25', isReversed: true },
+];
+
+test('monthly receipts sum every non-reversed receipt dated in that month', () => {
+  assert.equal(sumMonthlyReceipts(cash, '2026-10'), 24500);
+});
+
+test('monthly receipts keep the unallocated credit receipt in the cash total', () => {
+  const receipts = sumMonthlyReceipts(
+    [{ amount: 24500, date: '2026-10-20' }],
+    '2026-10',
+  );
+  assert.equal(receipts, 24500);
+});
+
+test('monthly refunds only count refunds dated in the month across all payments', () => {
+  const withRefunds = [
+    ...cash,
+    { amount: 5000, date: '2026-09-15', refunds: [{ amount: 500, date: '2026-10-11' }] },
+    { amount: 3000, date: '2026-10-12', refunds: [{ amount: 250.5, date: '2026-10-14' }] },
+    { amount: 2000, date: '2026-11-02', refunds: [{ amount: 100, date: '2026-11-03' }] },
+  ];
+  assert.equal(sumMonthlyRefunds(withRefunds, '2026-10'), 750.5);
+});
+
+test('cash-basis net income subtracts refunds and expenses from receipts', () => {
+  const received = sumMonthlyReceipts(cash, '2026-10');
+  const refunded = sumMonthlyRefunds(
+    [{ amount: 1000, date: '2026-10-20', refunds: [{ amount: 250.25, date: '2026-10-28' }] }],
+    '2026-10',
+  );
+  assert.equal(Math.round((received - refunded - 8500) * 100) / 100, 15749.75);
 });
 

@@ -7,7 +7,7 @@ from rest_framework import status
 from apps.properties.models import Property, PropertySettings, Room
 from apps.tenants.models import Tenant, Tenancy
 from apps.rent.models import RentCharge
-from apps.payments.models import Payment, PaymentAllocation, Deposit, DepositDeduction
+from apps.payments.models import Payment, PaymentAllocation, PaymentReversal, Deposit, DepositDeduction
 from apps.expenses.models import Expense
 
 
@@ -173,6 +173,38 @@ class ReportingAndReconciliationTestCase(TestCase):
         # 10. Recent payments count: 5
         self.assertEqual(len(d['recentPayments']), 5)
 
+    def test_dashboard_received_is_cash_basis_and_includes_unallocated_credit(self):
+        """Rent received counts the month's receipts even when a receipt was held as advance credit."""
+        extra = Payment.objects.create(
+            tenant=self.tenants[0],
+            tenancy=self.tenancies[0],
+            room=self.rooms[0],
+            charge=None,
+            receipt_number="RH-2026-099",
+            amount=Decimal("1000.00"),
+            date=date(2026, 10, 20),
+            method="mpesa",
+            reference="ADVANCE-CREDIT-001",
+        )
+        self.assertFalse(PaymentAllocation.objects.filter(payment=extra).exists())
+
+        res = self.client.get('/api/v1/dashboard/metrics/?month=2026-10')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        d = res.data
+
+        cash_receipts = sum(
+            p.amount for p in Payment.objects.filter(date__year=2026, date__month=10)
+        )
+        self.assertEqual(d['totalRentReceived'], float(cash_receipts))
+        self.assertEqual(d['totalRentReceived'], 39500.00)
+
+        allocated_total = sum((c.paid_amount for c in self.charges), Decimal('0.00'))
+        self.assertEqual(allocated_total, Decimal("38500.00"))
+        self.assertGreater(d['totalRentReceived'], float(allocated_total))
+
+        self.assertEqual(d['totalOutstanding'], 11500.00)
+        self.assertEqual(d['collectionRate'], 79)
+
     def test_monthly_report_cash_basis_integrity(self):
         """Monthly financial report distinguishes cash collections from security deposits."""
         res = self.client.get('/api/v1/reports/monthly/?month=2026-10')
@@ -206,6 +238,29 @@ class ReportingAndReconciliationTestCase(TestCase):
         self.assertEqual(ob['total'], 11500.00)
         self.assertEqual(ob['count'], 3)
         self.assertEqual(len(ob['items']), 3)
+
+    def test_reversed_receipt_is_excluded_from_rent_received(self):
+        """A reversed payment stays recorded but is not cash received."""
+        reversed_payment = Payment.objects.create(
+            tenant=self.tenants[1],
+            tenancy=self.tenancies[1],
+            room=self.rooms[1],
+            charge=None,
+            receipt_number="RH-2026-098",
+            amount=Decimal("750.00"),
+            date=date(2026, 10, 21),
+            method="cash",
+            reference="REVERSED-001",
+        )
+        PaymentReversal.objects.create(payment=reversed_payment, reason="Mistaken entry")
+
+        res = self.client.get('/api/v1/dashboard/metrics/?month=2026-10')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['totalRentReceived'], 38500.00)
+
+        report = self.client.get('/api/v1/reports/monthly/?month=2026-10')
+        self.assertEqual(report.status_code, status.HTTP_200_OK)
+        self.assertEqual(report.data['summary']['rentReceived'], 38500.00)
 
     def test_invalid_month_format_returns_bad_request(self):
         """Invalid month queries return 400 Bad Request."""

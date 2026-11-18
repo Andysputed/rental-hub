@@ -81,3 +81,33 @@ export function buildPaymentPreview({
   const advanceCredit = Math.round((paid - allocated) * 100) / 100;
   return { appliedToTarget, remainingTargetBalance, advanceCredit };
 }
+
+export interface CashMovementLike {
+  amount: number | string;
+  date: string;
+  isReversed?: boolean;
+  refunds?: Array<{ amount: number | string; date: string }>;
+}
+
+/**
+ * Cash-basis rent received: every non-reversed receipt dated in the month,
+ * including unallocated credit that no charge paid_amount reflects.
+ */
+export function sumMonthlyReceipts(payments: CashMovementLike[], month: string): number {
+  const total = payments
+    .filter((payment) => payment.date.startsWith(month) && !payment.isReversed)
+    .reduce((sum, payment) => sum + Number(payment.amount), 0);
+  return Math.round(total * 100) / 100;
+}
+
+export function sumMonthlyRefunds(payments: CashMovementLike[], month: string): number {
+  const total = payments.reduce(
+    (sum, payment) =>
+      sum +
+      (payment.refunds ?? [])
+        .filter((refund) => refund.date.startsWith(month))
+        .reduce((refundSum, refund) => refundSum + Number(refund.amount), 0),
+    0,
+  );
+  return Math.round(total * 100) / 100;
+}
