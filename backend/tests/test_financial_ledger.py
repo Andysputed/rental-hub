@@ -118,6 +118,35 @@ class FinancialLedgerTestCase(TestCase):
         self.assertIsNotNone(allocation)
         self.assertEqual(allocation.amount, Decimal('7500.00'))
 
+    def test_record_cent_precision_payment_preserves_fractional_balance(self):
+        """Payments may carry cents; the residual balance keeps exact cent precision."""
+        self.client.post('/api/v1/rent-charges/generate/', {'month': '2026-10'}, format='json')
+        room = self.rooms[3]
+        charge = RentCharge.objects.get(room=room, month='2026-10')
+
+        res = self.client.post('/api/v1/payments/', {
+            'roomId': room.id,
+            'amount': '5866.67',
+            'method': 'mpesa',
+            'reference': 'CENT-PRECISION-001',
+            'paymentDate': '2026-10-06',
+            'chargeId': charge.id,
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED, res.data)
+        self.assertEqual(Decimal(str(res.data['amount'])), Decimal('5866.67'))
+
+        charge.refresh_from_db()
+        self.assertEqual(charge.paid_amount, Decimal('5866.67'))
+        self.assertEqual(charge.balance, Decimal('4133.33'))
+        self.assertNotEqual(charge.status, 'paid')
+
+        allocation = PaymentAllocation.objects.get(payment_id=res.data['id'])
+        self.assertEqual(allocation.amount, Decimal('5866.67'))
+
+        receipt = self.client.get(f"/api/v1/payments/{res.data['id']}/receipt/")
+        self.assertEqual(receipt.status_code, status.HTTP_200_OK)
+        self.assertAlmostEqual(receipt.data['allocation']['balanceAfter'], 4133.33, places=2)
+
     def test_record_full_payment_clears_charge(self):
         """Full payment clears charge with status 'paid' and zero balance."""
         self.client.post('/api/v1/rent-charges/generate/', {'month': '2026-10'}, format='json')

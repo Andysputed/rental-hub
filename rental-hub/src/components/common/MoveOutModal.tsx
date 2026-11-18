@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { useRental } from '../../context/useRental';
 import { tenanciesApi, getApiErrorDetail } from '../../services/api';
-import { formatKSh, formatDateShort } from '../../utils/format';
+import { formatKSh, formatDateShort, roundMoney } from '../../utils/format';
 import type { SettlementSummary, Deposit, PaymentMethod, MoveOutRequest } from '../../types';
 
 interface MoveOutModalProps {
@@ -86,11 +86,11 @@ export const MoveOutModal: React.FC<MoveOutModalProps> = ({
         const arrears = data.eligibleArrears?.total || 0;
 
         // Default rent deduction to min(deposit, arrears)
-        const defaultRentDed = Math.min(depAmount, arrears);
+        const defaultRentDed = roundMoney(Math.min(depAmount, arrears));
         setRentDeduction(defaultRentDed);
 
         // Default refund to remaining
-        const remaining = Math.max(0, depAmount - defaultRentDed);
+        const remaining = roundMoney(Math.max(0, depAmount - defaultRentDed));
         setRefundAmount(remaining);
       })
       .catch((err) => {
@@ -99,7 +99,7 @@ export const MoveOutModal: React.FC<MoveOutModalProps> = ({
         // Fallback to local tenancy deposit
         const dep = tenancy.deposit || 0;
         setRentDeduction(0);
-        setRefundAmount(dep);
+        setRefundAmount(roundMoney(dep));
       })
       .finally(() => {
         if (isMounted) setIsLoadingSummary(false);
@@ -112,14 +112,14 @@ export const MoveOutModal: React.FC<MoveOutModalProps> = ({
 
   if (!isOpen) return null;
 
-  const depositHeld = summary?.deposit?.amount ?? tenancy.deposit ?? 0;
-  const eligibleArrears = summary?.eligibleArrears?.total ?? 0;
+  const depositHeld = roundMoney(summary?.deposit?.amount ?? tenancy.deposit ?? 0);
+  const eligibleArrears = roundMoney(summary?.eligibleArrears?.total ?? 0);
   const isDepositHeld = summary?.deposit?.status === 'held' || depositHeld > 0;
 
   // Real-time calculations
-  const totalRepairs = repairDeductions.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-  const totalDeductions = (Number(rentDeduction) || 0) + totalRepairs;
-  const calculatedRefundable = Math.max(0, depositHeld - totalDeductions);
+  const totalRepairs = roundMoney(repairDeductions.reduce((sum, item) => sum + (Number(item.amount) || 0), 0));
+  const totalDeductions = roundMoney((Number(rentDeduction) || 0) + totalRepairs);
+  const calculatedRefundable = roundMoney(Math.max(0, depositHeld - totalDeductions));
 
   // Handle adding an itemized repair deduction
   const handleAddRepair = () => {
@@ -142,23 +142,23 @@ export const MoveOutModal: React.FC<MoveOutModalProps> = ({
     setRepairDeductions(updated);
 
     // Auto-update refund amount if it was matching refundable
-    const newRepairs = updated.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-    const newMaxRefund = Math.max(0, depositHeld - (Number(rentDeduction) || 0) - newRepairs);
+    const newRepairs = roundMoney(updated.reduce((sum, item) => sum + (Number(item.amount) || 0), 0));
+    const newMaxRefund = roundMoney(Math.max(0, depositHeld - (Number(rentDeduction) || 0) - newRepairs));
     setRefundAmount(newMaxRefund);
   };
 
   const handleRemoveRepair = (id: string) => {
     const updated = repairDeductions.filter((item) => item.id !== id);
     setRepairDeductions(updated);
-    const newRepairs = updated.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-    const newMaxRefund = Math.max(0, depositHeld - (Number(rentDeduction) || 0) - newRepairs);
+    const newRepairs = roundMoney(updated.reduce((sum, item) => sum + (Number(item.amount) || 0), 0));
+    const newMaxRefund = roundMoney(Math.max(0, depositHeld - (Number(rentDeduction) || 0) - newRepairs));
     setRefundAmount(newMaxRefund);
   };
 
   const handleRentDeductionChange = (val: number) => {
-    const clamped = Math.max(0, val);
+    const clamped = roundMoney(Math.max(0, val));
     setRentDeduction(clamped);
-    const newMaxRefund = Math.max(0, depositHeld - clamped - totalRepairs);
+    const newMaxRefund = roundMoney(Math.max(0, depositHeld - clamped - totalRepairs));
     setRefundAmount(newMaxRefund);
   };
 
@@ -373,7 +373,7 @@ export const MoveOutModal: React.FC<MoveOutModalProps> = ({
                         type="number"
                         min="0"
                         max={eligibleArrears}
-                        step="100"
+                        step="0.01"
                         value={rentDeduction || ''}
                         onChange={(e) => handleRentDeductionChange(Number(e.target.value) || 0)}
                         placeholder="0"
@@ -439,7 +439,7 @@ export const MoveOutModal: React.FC<MoveOutModalProps> = ({
                               <input
                                 type="number"
                                 min="0"
-                                step="100"
+                                step="0.01"
                                 required
                                 placeholder="Amount"
                                 value={item.amount || ''}
@@ -479,7 +479,7 @@ export const MoveOutModal: React.FC<MoveOutModalProps> = ({
                           type="number"
                           min="0"
                           max={calculatedRefundable}
-                          step="100"
+                          step="0.01"
                           value={refundAmount}
                           onChange={(e) => setRefundAmount(Number(e.target.value) || 0)}
                           className="w-full pl-10 pr-3 py-2 rounded-lg border border-gray-300 bg-white text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-700/20 focus:border-brand-700"

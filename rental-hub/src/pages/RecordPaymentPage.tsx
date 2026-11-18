@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Check, Smartphone, Banknote, Building2, Info } from 'lucide-react';
 import { useRental } from '../context/useRental';
-import { formatKSh, formatMonthYear, formatDateShort } from '../utils/format';
+import { formatKSh, formatMonthYear, formatDateShort, roundMoney } from '../utils/format';
 import { calculateRentForMonth } from '../utils/rent';
 import { buildPaymentPreview, outstandingChargesForTenancy, resolveAllocationTarget } from '../utils/payment';
 import type { PaymentMethod } from '../types';
@@ -63,10 +63,10 @@ export const RecordPaymentPage: React.FC = () => {
         ? resolveAllocationTarget(rentCharges, t.id, t.startDate.slice(0, 7))
         : undefined;
       if (charge) {
-        const remaining = charge.amount - charge.paidAmount;
-        setAmount(remaining > 0 ? remaining : charge.amount);
+        const remaining = roundMoney(charge.amount - charge.paidAmount);
+        setAmount(remaining > 0 ? remaining : roundMoney(charge.amount));
       } else if (oldestOutstanding) {
-        setAmount(oldestOutstanding.amount - oldestOutstanding.paidAmount);
+        setAmount(roundMoney(oldestOutstanding.amount - oldestOutstanding.paidAmount));
       } else if (t) {
         setAmount(calculateRentForMonth(t.monthlyRent || 10000, t.startDate, selectedMonth) ?? 0);
       }
@@ -199,10 +199,10 @@ export const RecordPaymentPage: React.FC = () => {
                 ? resolveAllocationTarget(rentCharges, t.id, t.startDate.slice(0, 7))
                 : undefined;
               if (charge) {
-                const remaining = charge.amount - charge.paidAmount;
-                setAmount(remaining > 0 ? remaining : charge.amount);
+                const remaining = roundMoney(charge.amount - charge.paidAmount);
+                setAmount(remaining > 0 ? remaining : roundMoney(charge.amount));
               } else if (oldestOutstanding) {
-                setAmount(oldestOutstanding.amount - oldestOutstanding.paidAmount);
+                setAmount(roundMoney(oldestOutstanding.amount - oldestOutstanding.paidAmount));
               } else if (t) {
                 setAmount(calculateRentForMonth(t.monthlyRent || 10000, t.startDate, selectedMonth) ?? 0);
               }
@@ -235,7 +235,8 @@ export const RecordPaymentPage: React.FC = () => {
           <input
             type="number"
             required
-            min={1}
+            min="0.01"
+            step="0.01"
             value={amount}
             onChange={(e) => setAmount(Number(e.target.value))}
             className="w-full px-3.5 py-2.5 rounded-xl border border-[#E5E7EB] bg-white text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-700/20 focus:border-brand-700"
@@ -411,7 +412,7 @@ export const RecordPaymentPage: React.FC = () => {
                     </span>
                     <input
                       type="number"
-                      min="0"
+                      min="0.01"
                       max={balance}
                       step="0.01"
                       value={existing}
@@ -445,7 +446,7 @@ export const RecordPaymentPage: React.FC = () => {
                   />
                   <input
                     type="number"
-                    min="0"
+                    min="0.01"
                     step="0.01"
                     value={item.amount}
                     onChange={(event) =>

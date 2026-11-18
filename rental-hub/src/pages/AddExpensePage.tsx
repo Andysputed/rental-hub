@@ -112,8 +112,8 @@ export const AddExpensePage: React.FC = () => {
           <input
             type="number"
             required
-            min={1}
-            step="any"
+            min="0.01"
+            step="0.01"
             value={amount || ''}
             onChange={(e) => setAmount(Number(e.target.value))}
             placeholder="0.00"

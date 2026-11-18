@@ -255,7 +255,8 @@ export const SettingsPage: React.FC = () => {
                   </div>
                   <input
                     type="number"
-                    min={1}
+                    min="0.01"
+                    step="0.01"
                     value={rentValueFor(room)}
                     onChange={(e) =>
                       setRoomRentEdits((edits) => ({

@@ -294,7 +294,8 @@ export const RegisterTenantPage: React.FC = () => {
             <input
               type="number"
               required
-              min={0}
+              min="0"
+              step="0.01"
               value={monthlyRent}
               onChange={(e) => setMonthlyRent(Number(e.target.value))}
               className="w-full px-3.5 py-2.5 rounded-xl border border-[#E5E7EB] bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-700/20 focus:border-brand-700"
@@ -412,7 +413,8 @@ export const RegisterTenantPage: React.FC = () => {
                   <input
                     type="number"
                     required
-                    min={0}
+                    min="0"
+                    step="0.01"
                     value={depositRequired}
                     onChange={(e) => {
                       const req = Number(e.target.value);
@@ -432,8 +434,9 @@ export const RegisterTenantPage: React.FC = () => {
                   </label>
                   <input
                     type="number"
-                    min={0}
+                    min="0"
                     max={depositRequired}
+                    step="0.01"
                     value={depositPaid}
                     onChange={(e) => setDepositPaid(Number(e.target.value))}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-[#E5E7EB] bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-700/20 focus:border-brand-700"

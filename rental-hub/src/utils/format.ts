@@ -1,3 +1,8 @@
+export function roundMoney(amount: number): number {
+  if (!Number.isFinite(amount)) return 0;
+  return Math.round((amount + Number.EPSILON) * 100) / 100;
+}
+
 export function formatKSh(amount: number, includePrefix = true): string {
   const formatted = Math.round(amount).toLocaleString('en-KE');
   return includePrefix ? `KSh ${formatted}` : formatted;

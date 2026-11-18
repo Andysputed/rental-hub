@@ -91,3 +91,16 @@ test('manual preview caps the target allocation at its balance', () => {
   assert.equal(preview.appliedToTarget, 1000);
   assert.equal(preview.advanceCredit, 0);
 });
+
+test('preview preserves cent precision for a partial cent payment', () => {
+  const preview = buildPaymentPreview({
+    amount: 5866.67,
+    target: { ...charges[0], amount: 10000, paidAmount: 0 },
+    automatic: true,
+    outstandingTotal: 10000,
+  });
+  assert.equal(preview.appliedToTarget, 5866.67);
+  assert.equal(preview.remainingTargetBalance, 4133.33);
+  assert.equal(preview.advanceCredit, 0);
+});
+

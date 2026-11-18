@@ -150,8 +150,9 @@ export const RecordDepositPaymentModal: React.FC<RecordDepositPaymentModalProps>
                 <input
                   type="number"
                   required
-                  min={1}
+                  min="0.01"
                   max={outstanding}
+                  step="0.01"
                   value={amount}
                   onChange={(e) => setAmount(Number(e.target.value))}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-[#E5E7EB] bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-700/20 focus:border-brand-700 font-semibold"
