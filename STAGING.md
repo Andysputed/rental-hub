@@ -156,3 +156,5 @@ These are observation notes, not staging-only artifacts:
    credit" at the post-allocation value when the amount exceeds the balance.
 5. Whole-shilling display rounding hides small cent balances (e.g. 0.33).
 6. Move-out review renders the raw method value "Mpesa" instead of "M-Pesa".
+7. The login screen shows a hard-coded "Kimumu Rentals" brand while the seeded
+   property and dashboard show "Ridgeview Staging Apartments".
