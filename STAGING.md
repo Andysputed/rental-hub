@@ -140,21 +140,29 @@ PostgreSQL cluster.
 
 ## Known issues found during staging E2E
 
-These are observation notes, not staging-only artifacts:
+These were observation notes, not staging-only artifacts. All are now fixed and
+covered by regression tests:
 
-1. Prorated kobo/cents amounts (e.g. 5,866.67) cannot be typed exactly into payment
-   and move-out settlement inputs because the numeric inputs default to `step=1`;
-   the browser rejects the value ("nearest valid values are 4333 and 4334").
-2. The dashboard headline "rent received" sums charge `paid_amount` rather than cash
-   receipts, so unallocated advance credit is omitted.
-3. The record-payment screen inherits the currently selected month in the top bar.
-   If that month lies outside the tenancy, submission fails with
-   "chargeMonth: Selected rent period is outside this tenancy" and there is no month
-   control on the form.
-4. The payment allocation preview labels the target charge with the selected month
-   instead of the charge's actual month, and does not cap "unallocated advance
-   credit" at the post-allocation value when the amount exceeds the balance.
-5. Whole-shilling display rounding hides small cent balances (e.g. 0.33).
-6. Move-out review renders the raw method value "Mpesa" instead of "M-Pesa".
-7. The login screen shows a hard-coded "Kimumu Rentals" brand while the seeded
-   property and dashboard show "Ridgeview Staging Apartments".
+1. **Resolved in `8505f4c`** — Prorated cent amounts (e.g. 5,866.67) were rejected by
+   payment, deposit, expense, rent, room-rent, and move-out inputs because they used
+   `step=1`/`step=100`. Every monetary input now steps by `0.01`, and
+   `tests/test_financial_ledger.py` proves a 5,866.67 payment leaves a 4,133.33 balance.
+2. **Resolved in `a05ded8`** — The dashboard "rent received" summed charge
+   `paid_amount` instead of cash receipts, omitting unallocated advance credit.
+   It now sums non-reversed receipts dated in the selected month, and refunds are
+   netted out of net cash income. Tests: `src/utils/payment.test.ts` and
+   `tests/test_reporting.py`.
+3. **Resolved in `dfb8e0d`** — Recording a payment while the top-bar month was outside
+   the tenancy failed with "Selected rent period is outside this tenancy". The form now
+   allocates to the oldest outstanding charge and omits an invalid `chargeMonth`.
+4. **Resolved in `4eeaf68`** — The preview labelled the target with the selected month
+   and could overstate credit. It now names the actual charge month, applies at most
+   the outstanding balance, and caps credit at the unallocated remainder.
+5. **Resolved in `eed3f38`** — Whole-shilling rounding hid cent balances. `formatKSh`
+   shows cents only when present, and receipt amounts in words include the cents.
+6. **Resolved in `9839a73`** — Move-out and tenant history rendered "Mpesa". A shared
+   `formatPaymentMethod` now renders "M-Pesa" across every screen, receipt PDF, and
+   export.
+7. **Resolved in `9839a73`** — The login page hard-coded one property brand. It now
+   reads `VITE_PROPERTY_NAME`/`VITE_PROPERTY_LOCATION` and falls back to a generic
+   "Landlord login" label when unset.
